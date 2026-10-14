@@ -1,0 +1,15 @@
+# Segredos: NUNCA vão para o GitHub
+.env
+.env.*
+!.env.example
+/*.json
+!/vercel.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Vercel
+.vercel
