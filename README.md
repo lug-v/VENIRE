@@ -9,7 +9,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 0 — Contas e repositório
 - [x] Fase 1 — Bot respondendo no Telegram, rodando na Vercel
 - [x] Fase 2 — Gastos por texto (Neon + Google Planilha)
-- [ ] Fase 3 — Agenda no Google Agenda, dias da semana e conflitos
+- [x] Fase 3 — Agenda no Google Agenda, dias da semana e conflitos
 - [ ] Fase 4 — Áudio e foto
 - [ ] Fase 5 — Corrigir, cancelar e perguntar
 - [ ] Fase 6 — Aviso 1 hora antes, resumo das 6h30 e resumo semanal
@@ -27,10 +27,16 @@ venire/
 │   ├── banco.py              # conexão com o Neon
 │   ├── canais/telegram.py    # fala com a API do Telegram
 │   ├── ia/groq.py            # chamada à IA, sempre devolvendo JSON
-│   ├── nucleo/respostas.py   # decide o que fazer com cada mensagem (não depende do Telegram)
+│   ├── pendencias.py         # pedidos que esperam um clique (conflito, escolher o dia)
+│   ├── nucleo/
+│   │   ├── interpretador.py  # uma chamada à IA: gasto, evento ou outro + campos extraídos
+│   │   └── respostas.py      # decide o que fazer com cada mensagem (não depende do Telegram)
 │   └── servicos/
+│       ├── google.py         # login do robô no Google e erros explicados
 │       ├── gastos.py         # interpretar, salvar, desfazer e resumir gastos
-│       └── planilha.py       # cópia dos gastos na Google Planilha
+│       ├── planilha.py       # cópia dos gastos na Google Planilha
+│       ├── eventos.py        # monta o compromisso e formata as respostas
+│       └── calendario.py     # Google Agenda: criar, apagar, listar e conflitos
 ├── tests/                  # python -m pytest
 ├── vercel.json
 └── requirements.txt
@@ -67,6 +73,16 @@ venire/
 | `GROQ_MODEL` (opcional) | Troca o modelo da IA sem mexer no código (padrão `qwen/qwen3.8-27b`) |
 
 Os gastos ficam na tabela `expenses`, com as mesmas colunas usadas pelo clari-analytics.
+
+## Variável da fase 3
+
+| Nome | Valor |
+|---|---|
+| `GOOGLE_CALENDAR_ID` | Seu Gmail (ID da agenda principal), compartilhada com o robô com “Fazer alterações nos eventos” |
+
+Diagnóstico: `/agenda/diagnostico?chave=SUA_SENHA`.
+
+Regras de data (a IA só copia a expressão; o Python calcula): “quinta” = próxima quinta; “quinta da semana que vem” = quinta da semana seguinte (domingo a sábado); se hoje já é o dia citado, o Venire pergunta com botões; sem horário = evento de dia inteiro; sem horário final = 1 hora; de 1 a 6 sem “manhã” = tarde.
 
 ## Rodar no seu computador
 

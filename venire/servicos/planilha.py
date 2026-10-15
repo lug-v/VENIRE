@@ -4,67 +4,23 @@ O banco é a fonte oficial; a planilha é a sua "janela" para ver tudo em tabela
 Se a planilha falhar, o gasto continua salvo no banco.
 """
 
-import json
-
 import httpx
+
+from venire.servicos.google import ErroGoogle, ler_conta_servico, token, verificar
 
 API = "https://sheets.googleapis.com/v4/spreadsheets/{id}"
 ESCOPO = ["https://www.googleapis.com/auth/spreadsheets"]
 CABECALHO = ["ID", "Data", "Valor", "Categoria", "Descrição", "Estabelecimento", "Pagamento", "Origem", "Mensagem"]
 
 
-class ErroPlanilha(Exception):
-    pass
+ErroPlanilha = ErroGoogle
 
-
-def _verificar(resposta: httpx.Response) -> None:
-    """Transforma erros do Google em mensagens que dizem o que fazer."""
-    if resposta.status_code < 400:
-        return
-    try:
-        detalhe = resposta.json().get("error", {}).get("message", "")
-    except ValueError:
-        detalhe = resposta.text[:200]
-    dicas = {
-        403: "o robô não tem acesso: compartilhe a planilha com o e-mail dele como Editor "
-             "e confira se a Google Sheets API está ativada no projeto do Google Cloud",
-        404: "planilha não encontrada: confira o GOOGLE_SHEET_ID (trecho entre /d/ e /edit)",
-        400: "pedido inválido para a planilha",
-    }
-    dica = dicas.get(resposta.status_code, "erro do Google")
-    raise ErroPlanilha(f"{resposta.status_code} – {dica}. Detalhe do Google: {detalhe}")
-
-
-def ler_conta_servico(texto: str) -> dict:
-    """Lê o JSON da conta de serviço, tolerando erros comuns de copiar e colar."""
-    import base64
-
-    valor = (texto or "").strip().lstrip("\ufeff")
-    if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in "'\"":
-        valor = valor[1:-1].strip()  # aspas sobrando em volta
-    if not valor.startswith("{"):
-        try:  # aceita também o arquivo convertido em base64
-            valor = base64.b64decode(valor, validate=True).decode("utf-8").strip()
-        except Exception:
-            pass
-    original = valor
-    if valor.startswith("{") and not valor.endswith("}"):
-        valor += "\n}"  # a última chave costuma ficar de fora ao copiar e colar
-    try:
-        info = json.loads(valor)
-    except json.JSONDecodeError as erro:
-        valor = original
-        inicio = valor[:12].replace("\n", " ")
-        raise ErroPlanilha(
-            "GOOGLE_SERVICE_ACCOUNT_JSON não é um JSON válido: copie o arquivo inteiro, do { inicial ao } final. "
-            f"O valor cadastrado começa com “{inicio}”, termina com “{valor[-1:] if valor else ''}” "
-            f"e tem {len(valor)} caracteres (o arquivo certo começa com “{{”, termina com “}}” "
-            "e costuma ter mais de 2.000 caracteres)."
-        ) from erro
-    faltando = [campo for campo in ("client_email", "private_key") if not info.get(campo)]
-    if faltando:
-        raise ErroPlanilha(f"O JSON cadastrado não é o da conta de serviço (faltam: {', '.join(faltando)}).")
-    return info
+DICAS = {
+    403: "o robô não tem acesso: compartilhe a planilha com o e-mail dele como Editor "
+         "e confira se a Google Sheets API está ativada no projeto do Google Cloud",
+    404: "planilha não encontrada: confira o GOOGLE_SHEET_ID (trecho entre /d/ e /edit)",
+    400: "pedido inválido para a planilha",
+}
 
 
 def ler_id_planilha(texto: str) -> str:
@@ -95,22 +51,17 @@ class Planilha:
 
     def _cabecalhos(self) -> dict:
         if self._token is None:
-            from google.auth.transport.requests import Request
-            from google.oauth2 import service_account
-
-            credenciais = service_account.Credentials.from_service_account_info(self._info, scopes=ESCOPO)
-            credenciais.refresh(Request())
-            self._token = credenciais.token
+            self._token = token(self._info, ESCOPO)
         return {"Authorization": f"Bearer {self._token}"}
 
     def _get(self, caminho: str, **params) -> dict:
         resposta = self._cliente.get(self._url + caminho, headers=self._cabecalhos(), params=params)
-        _verificar(resposta)
+        verificar(resposta, DICAS)
         return resposta.json()
 
     def _post(self, caminho: str, corpo: dict, **params) -> dict:
         resposta = self._cliente.post(self._url + caminho, headers=self._cabecalhos(), json=corpo, params=params)
-        _verificar(resposta)
+        verificar(resposta, DICAS)
         return resposta.json()
 
     @property

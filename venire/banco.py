@@ -4,6 +4,7 @@ from contextlib import contextmanager
 
 import psycopg
 
+from venire import pendencias
 from venire.servicos import gastos
 
 _tabelas_prontas = False
@@ -18,6 +19,7 @@ def conectar(database_url: str):
     with psycopg.connect(database_url, autocommit=False, connect_timeout=10) as conexao:
         if not _tabelas_prontas:
             gastos.criar_tabela(conexao)
+            pendencias.criar_tabela(conexao)
             _tabelas_prontas = True
         yield conexao
         conexao.commit()

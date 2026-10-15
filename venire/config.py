@@ -38,6 +38,7 @@ class Config:
     groq_modelo: str = "qwen/qwen3.8-27b"
     google_conta_servico_json: str = ""
     google_planilha_id: str = ""
+    google_agenda_id: str = ""
 
     @property
     def segredo_webhook(self) -> str:
@@ -59,4 +60,5 @@ def carregar_config() -> Config:
         groq_modelo=os.getenv("GROQ_MODEL", "").strip() or "qwen/qwen3.8-27b",
         google_conta_servico_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip(),
         google_planilha_id=os.getenv("GOOGLE_SHEET_ID", "").strip(),
+        google_agenda_id=os.getenv("GOOGLE_CALENDAR_ID", "").strip(),
     )

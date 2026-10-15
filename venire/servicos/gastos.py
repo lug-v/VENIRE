@@ -67,11 +67,8 @@ def formatar_reais(valor) -> str:
     return "R$ " + texto.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
-def interpretar(texto: str, ia, referencia: date | None = None) -> Gasto | None:
-    """Usa a IA para extrair os campos e o código para validar e calcular a data."""
-    dados = ia.json(INSTRUCOES, texto)
-    if not dados.get("eh_gasto"):
-        return None
+def de_dados(dados: dict, texto: str, referencia: date | None = None) -> Gasto | None:
+    """Valida os campos extraídos pela IA e calcula a data do gasto."""
     try:
         valor = float(str(dados.get("valor", 0)).replace(",", "."))
     except ValueError:
@@ -88,6 +85,14 @@ def interpretar(texto: str, ia, referencia: date | None = None) -> Gasto | None:
         texto_original=texto[:1000],
         confianca=float(dados.get("confianca") or 0.8),
     )
+
+
+def interpretar(texto: str, ia, referencia: date | None = None) -> Gasto | None:
+    """Atalho usado nos testes: pergunta só sobre gasto."""
+    dados = ia.json(INSTRUCOES, texto)
+    if not (dados.get("eh_gasto") or dados.get("tipo") == "gasto"):
+        return None
+    return de_dados(dados, texto, referencia)
 
 
 def confirmacao(gasto: Gasto) -> str:

@@ -37,8 +37,12 @@ class Telegram:
             dados["reply_markup"] = teclado(botoes)
         return self.chamar("sendMessage", **dados)
 
-    def editar(self, chat_id: int, mensagem_id: int, texto: str) -> dict:
-        return self.chamar("editMessageText", chat_id=chat_id, message_id=mensagem_id, text=texto)
+    def editar(self, chat_id: int, mensagem_id: int, texto: str,
+               botoes: list[tuple[str, str]] | None = None) -> dict:
+        dados = {"chat_id": chat_id, "message_id": mensagem_id, "text": texto}
+        if teclado(botoes or []):
+            dados["reply_markup"] = teclado(botoes)
+        return self.chamar("editMessageText", **dados)
 
     def responder_botao(self, callback_id: str, aviso: str = "") -> dict:
         return self.chamar("answerCallbackQuery", callback_query_id=callback_id, text=aviso)
@@ -58,6 +62,7 @@ class Telegram:
             drop_pending_updates=True,
         )
         self.chamar("setMyCommands", commands=[
+            {"command": "agenda", "description": "Compromissos de hoje e amanhã"},
             {"command": "gastos", "description": "Resumo dos gastos do mês"},
             {"command": "semana", "description": "Resumo dos gastos da semana"},
             {"command": "ajuda", "description": "Ver o que o Venire sabe fazer"},

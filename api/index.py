@@ -5,6 +5,7 @@ Rotas:
   GET  /telegram/configurar   → registra o webhook no Telegram (protegido por senha)
   GET  /telegram/diagnostico  → mostra erros do webhook (protegido por senha)
   GET  /planilha/diagnostico  → testa o acesso à Google Planilha (protegido por senha)
+  GET  /agenda/diagnostico    → testa o acesso ao Google Agenda (protegido por senha)
   POST /webhook               → recebe as mensagens e os cliques nos botões
 """
 
@@ -24,6 +25,7 @@ from venire.canais.telegram import ErroTelegram, Telegram  # noqa: E402
 from venire.config import Config, carregar_config  # noqa: E402
 from venire.ia.groq import Groq  # noqa: E402
 from venire.nucleo.respostas import Dependencias, processar_botao, processar_texto  # noqa: E402
+from venire.servicos.calendario import Calendario  # noqa: E402
 from venire.servicos.planilha import Planilha  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -42,13 +44,14 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 2,
+        "fase": 3,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,
         "banco_configurado": bool(config.database_url),
         "ia_configurada": bool(config.groq_api_key),
         "planilha_configurada": bool(config.google_conta_servico_json and config.google_planilha_id),
+        "agenda_configurada": bool(config.google_conta_servico_json and config.google_agenda_id),
     }
 
 
@@ -108,13 +111,34 @@ def diagnostico_planilha(chave: str = ""):
     return resultado
 
 
+@app.get("/agenda/diagnostico")
+def diagnostico_agenda(chave: str = ""):
+    """Testa o acesso ao Google Agenda e explica o erro, se houver."""
+    config = carregar_config()
+    if not iguais(chave, config.venire_secret):
+        raise HTTPException(status_code=401, detail="Chave inválida.")
+    resultado = {"agenda_cadastrada": config.google_agenda_id or "(não cadastrada)"}
+    try:
+        calendario = Calendario(config.google_conta_servico_json, config.google_agenda_id)
+        resultado["email_do_robo"] = calendario.email_robo
+        resultado["nome_da_agenda"] = calendario.testar()
+        resultado["ok"] = True
+    except Exception as erro:
+        resultado["ok"] = False
+        resultado["erro"] = str(erro)[:600]
+    return resultado
+
+
 def montar_dependencias(config: Config) -> Dependencias:
     tem_planilha = bool(config.google_conta_servico_json and config.google_planilha_id)
+    tem_agenda = bool(config.google_conta_servico_json and config.google_agenda_id)
     return Dependencias(
         ia=lambda: Groq(config.groq_api_key, config.groq_modelo),
         banco=lambda: conectar(config.database_url),
         planilha=(lambda: Planilha(config.google_conta_servico_json, config.google_planilha_id))
         if tem_planilha else None,
+        calendario=(lambda: Calendario(config.google_conta_servico_json, config.google_agenda_id))
+        if tem_agenda else None,
     )
 
 
@@ -154,7 +178,7 @@ async def webhook(
         if clique:
             resposta = processar_botao(clique.get("data", ""), deps)
             telegram.responder_botao(clique["id"])
-            telegram.editar(chat_id, mensagem["message_id"], resposta.texto)
+            telegram.editar(chat_id, mensagem["message_id"], resposta.texto, resposta.botoes)
         else:
             telegram.digitando(chat_id)
             nome = (mensagem.get("from") or {}).get("first_name", "")

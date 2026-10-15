@@ -8,7 +8,8 @@ import httpx
 from venire.servicos.gastos import Gasto
 import base64
 
-from venire.servicos.planilha import CABECALHO, Planilha, ler_conta_servico, ler_id_planilha
+from venire.servicos.google import ler_conta_servico
+from venire.servicos.planilha import CABECALHO, Planilha, ler_id_planilha
 
 
 CONTA = '{"type": "service_account", "client_email": "robo@x.iam.gserviceaccount.com", "private_key": "k"}'

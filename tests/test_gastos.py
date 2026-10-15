@@ -165,5 +165,5 @@ def test_resumos(deps):
 def test_mensagem_que_nao_e_gasto(deps):
     deps.estado["ia"] = IAFalsa({"eh_gasto": False})
     resposta = processar_texto("marcar reunião às 9 na quinta", deps)
-    assert "Agenda chega na próxima fase" in resposta.texto
+    assert "Ainda não sei fazer isso" in resposta.texto
     assert resposta.botoes == []
