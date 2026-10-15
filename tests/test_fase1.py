@@ -23,6 +23,10 @@ class TelegramFalso:
     def enviar(self, chat_id, texto):
         TelegramFalso.enviados.append((chat_id, texto))
 
+    def chamar(self, metodo, **dados):
+        return {"url": "https://x/webhook", "pending_update_count": 2,
+                "last_error_message": "Wrong response from the webhook: 401 Unauthorized"}
+
     def registrar_webhook(self, url, segredo):
         TelegramFalso.webhook = {"url": url, "segredo": segredo}
         return {"username": "venire_teste_bot"}
@@ -103,3 +107,10 @@ def test_configurar_usa_endereco_oficial(cliente, monkeypatch):
     monkeypatch.setenv("VERCEL_PROJECT_PRODUCTION_URL", "venire-oficial.vercel.app")
     cliente.get("/telegram/configurar?chave=senha-de-teste")
     assert TelegramFalso.webhook["url"] == "https://venire-oficial.vercel.app/webhook"
+
+
+def test_diagnostico(cliente):
+    assert cliente.get("/telegram/diagnostico?chave=errada").status_code == 401
+    dados = cliente.get("/telegram/diagnostico?chave=senha-de-teste").json()
+    assert dados["mensagens_na_fila"] == 2
+    assert "401" in dados["ultimo_erro"]

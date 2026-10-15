@@ -56,6 +56,25 @@ def configurar_telegram(request: Request, chave: str = ""):
     return {"ok": True, "bot": f"@{bot.get('username')}", "webhook": url}
 
 
+@app.get("/telegram/diagnostico")
+def diagnostico_telegram(chave: str = ""):
+    """Mostra o que o Telegram sabe sobre o webhook: endereço, erros e mensagens na fila."""
+    config = carregar_config()
+    if not iguais(chave, config.venire_secret):
+        raise HTTPException(status_code=401, detail="Chave inválida.")
+    try:
+        info = Telegram(config.telegram_token).chamar("getWebhookInfo")
+    except ErroTelegram as erro:
+        raise HTTPException(status_code=502, detail=f"O Telegram recusou: {erro}") from erro
+    return {
+        "webhook_registrado": info.get("url") or "(nenhum)",
+        "endereco_oficial": os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "(não informado pela Vercel)",
+        "mensagens_na_fila": info.get("pending_update_count", 0),
+        "ultimo_erro": info.get("last_error_message") or "(nenhum)",
+        "ultimo_erro_em": info.get("last_error_date"),
+    }
+
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
