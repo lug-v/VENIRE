@@ -183,3 +183,10 @@ Considerando hoje = terça, 13/10/2026:
 - Migrar ou não o histórico da Clari para o Venire.
 - Categorias definitivas de gastos (proposta inicial: as mesmas da Clari).
 - Antecedência extra para eventos de dia inteiro (proposta: avisar no resumo das 6h30 do próprio dia).
+
+## 9. Andamento
+- **Fase 0 — concluída (14/10/2026):** contas criadas (BotFather @Venyre_bot, Groq, Neon pela Vercel, Google Cloud com conta de serviço, cron-job.org), agenda principal e planilha "Venire – Gastos" compartilhadas com o robô.
+- **Fase 1 — concluída (14/10/2026):** bot respondendo no Telegram, rodando na Vercel em `venire-kappa.vercel.app`, repositório `lug-v/VENIRE`. Variáveis na Vercel: `TELEGRAM_BOT_TOKEN`, `VENIRE_SECRET`, `TELEGRAM_CHAT_ID`.
+  - Rotas úteis: `/telegram/configurar?chave=...` (registra o webhook) e `/telegram/diagnostico?chave=...` (mostra erros do webhook).
+  - Lição: o webhook deve usar sempre o endereço oficial de produção; endereços de deploy específico ficam protegidos por login da Vercel.
+- **Próxima:** fase 2 — gastos por texto (Neon + Google Planilha).
