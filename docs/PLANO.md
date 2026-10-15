@@ -189,4 +189,8 @@ Considerando hoje = terça, 13/10/2026:
 - **Fase 1 — concluída (14/10/2026):** bot respondendo no Telegram, rodando na Vercel em `venire-kappa.vercel.app`, repositório `lug-v/VENIRE`. Variáveis na Vercel: `TELEGRAM_BOT_TOKEN`, `VENIRE_SECRET`, `TELEGRAM_CHAT_ID`.
   - Rotas úteis: `/telegram/configurar?chave=...` (registra o webhook) e `/telegram/diagnostico?chave=...` (mostra erros do webhook).
   - Lição: o webhook deve usar sempre o endereço oficial de produção; endereços de deploy específico ficam protegidos por login da Vercel.
-- **Próxima:** fase 2 — gastos por texto (Neon + Google Planilha).
+- **Fase 2 — concluída (14/10/2026):** gastos por texto salvos no Neon (tabela `expenses`, compatível com o clari-analytics) e copiados para a Google Planilha; botão Desfazer; `/gastos` e `/semana`.
+  - Variáveis novas: `DATABASE_URL` (conexão Neon com prefixo `DATABASE`, sem branch por deploy), `GROQ_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_SHEET_ID` (aceita o link inteiro da planilha).
+  - Rota útil: `/planilha/diagnostico?chave=...`.
+  - Lições: ao colar o JSON do robô, a última `}` costuma ficar de fora (o código agora completa); trocar o `VENIRE_SECRET` exige abrir de novo o link de configurar.
+- **Próxima:** fase 3 — agenda no Google Agenda, dias da semana e conflitos.
