@@ -35,15 +35,39 @@ def _verificar(resposta: httpx.Response) -> None:
     raise ErroPlanilha(f"{resposta.status_code} – {dica}. Detalhe do Google: {detalhe}")
 
 
+def ler_conta_servico(texto: str) -> dict:
+    """Lê o JSON da conta de serviço, tolerando erros comuns de copiar e colar."""
+    import base64
+
+    valor = (texto or "").strip().lstrip("\ufeff")
+    if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in "'\"":
+        valor = valor[1:-1].strip()  # aspas sobrando em volta
+    if not valor.startswith("{"):
+        try:  # aceita também o arquivo convertido em base64
+            valor = base64.b64decode(valor, validate=True).decode("utf-8").strip()
+        except Exception:
+            pass
+    try:
+        info = json.loads(valor)
+    except json.JSONDecodeError as erro:
+        inicio = valor[:12].replace("\n", " ")
+        raise ErroPlanilha(
+            "GOOGLE_SERVICE_ACCOUNT_JSON não é um JSON válido: copie o arquivo inteiro, do { inicial ao } final. "
+            f"O valor cadastrado começa com “{inicio}”, termina com “{valor[-1:] if valor else ''}” "
+            f"e tem {len(valor)} caracteres (o arquivo certo começa com “{{”, termina com “}}” "
+            "e costuma ter mais de 2.000 caracteres)."
+        ) from erro
+    faltando = [campo for campo in ("client_email", "private_key") if not info.get(campo)]
+    if faltando:
+        raise ErroPlanilha(f"O JSON cadastrado não é o da conta de serviço (faltam: {', '.join(faltando)}).")
+    return info
+
+
 class Planilha:
     def __init__(self, conta_servico_json: str, planilha_id: str, cliente: httpx.Client | None = None):
         if not conta_servico_json or not planilha_id:
             raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_SHEET_ID não configurados.")
-        try:
-            self._info = json.loads(conta_servico_json)
-        except json.JSONDecodeError as erro:
-            raise ErroPlanilha("GOOGLE_SERVICE_ACCOUNT_JSON não é um JSON válido: copie o arquivo inteiro, "
-                               "do { inicial ao } final") from erro
+        self._info = ler_conta_servico(conta_servico_json)
         self._url = API.format(id=planilha_id)
         self._cliente = cliente or httpx.Client(timeout=20)
         self._token = None

@@ -6,7 +6,12 @@ import json
 import httpx
 
 from venire.servicos.gastos import Gasto
-from venire.servicos.planilha import CABECALHO, Planilha
+import base64
+
+from venire.servicos.planilha import CABECALHO, Planilha, ler_conta_servico
+
+
+CONTA = '{"type": "service_account", "client_email": "robo@x.iam.gserviceaccount.com", "private_key": "k"}'
 
 
 class GoogleFalso:
@@ -34,7 +39,7 @@ class GoogleFalso:
 
 
 def criar_planilha(google):
-    planilha = Planilha('{"type": "service_account"}', "planilha123",
+    planilha = Planilha(CONTA, "planilha123",
                         cliente=httpx.Client(transport=httpx.MockTransport(google)))
     planilha._token = "token-falso"  # pula o login real no Google
     return planilha
@@ -75,5 +80,31 @@ def test_json_invalido():
         Planilha("isso não é json", "planilha123")
     except Exception as erro:
         assert "JSON válido" in str(erro)
+    else:
+        raise AssertionError("deveria ter falhado")
+
+
+def test_tolera_erros_de_copiar_e_colar():
+    assert ler_conta_servico(CONTA)["client_email"].startswith("robo@")
+    assert ler_conta_servico(f"  '{CONTA}'  ")["client_email"].startswith("robo@")
+    assert ler_conta_servico("\ufeff" + CONTA)["client_email"].startswith("robo@")
+    assert ler_conta_servico(base64.b64encode(CONTA.encode()).decode())["client_email"].startswith("robo@")
+
+
+def test_explica_json_cortado():
+    try:
+        ler_conta_servico(CONTA[:40])
+    except Exception as erro:
+        assert "40 caracteres" in str(erro)
+        assert "começa com “{" in str(erro)
+    else:
+        raise AssertionError("deveria ter falhado")
+
+
+def test_json_de_outra_coisa():
+    try:
+        ler_conta_servico('{"web": {"client_id": "x"}}')
+    except Exception as erro:
+        assert "client_email" in str(erro)
     else:
         raise AssertionError("deveria ter falhado")
