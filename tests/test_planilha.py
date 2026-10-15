@@ -91,6 +91,12 @@ def test_tolera_erros_de_copiar_e_colar():
     assert ler_conta_servico(base64.b64encode(CONTA.encode()).decode())["client_email"].startswith("robo@")
 
 
+def test_completa_a_ultima_chave():
+    bonito = json.dumps(json.loads(CONTA), indent=2)
+    assert bonito.endswith("}")
+    assert ler_conta_servico(bonito[:-1].rstrip())["client_email"].startswith("robo@")
+
+
 def test_explica_json_cortado():
     try:
         ler_conta_servico(CONTA[:40])

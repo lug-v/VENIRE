@@ -47,6 +47,8 @@ def ler_conta_servico(texto: str) -> dict:
             valor = base64.b64decode(valor, validate=True).decode("utf-8").strip()
         except Exception:
             pass
+    if valor.startswith("{") and not valor.endswith("}"):
+        valor += "\n}"  # a última chave costuma ficar de fora ao copiar e colar
     try:
         info = json.loads(valor)
     except json.JSONDecodeError as erro:
