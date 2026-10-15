@@ -8,9 +8,14 @@ from fastapi.testclient import TestClient
 
 from api import index
 from venire.config import carregar_config
-from venire.nucleo.respostas import responder
+from venire.nucleo.respostas import Dependencias, processar_texto
 
 DONO = 111222333
+
+
+class IANaoGasto:
+    def json(self, instrucoes, mensagem):
+        return {"eh_gasto": False}
 
 
 class TelegramFalso:
@@ -20,8 +25,11 @@ class TelegramFalso:
     def __init__(self, token):
         assert token
 
-    def enviar(self, chat_id, texto):
+    def enviar(self, chat_id, texto, botoes=None):
         TelegramFalso.enviados.append((chat_id, texto))
+
+    def digitando(self, chat_id):
+        pass
 
     def chamar(self, metodo, **dados):
         return {"url": "https://x/webhook", "pending_update_count": 2,
@@ -38,6 +46,8 @@ def cliente(monkeypatch):
     monkeypatch.setenv("VENIRE_SECRET", "senha-de-teste")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", str(DONO))
     monkeypatch.setattr(index, "Telegram", TelegramFalso)
+    monkeypatch.setattr(index, "montar_dependencias", lambda config: Dependencias(
+        ia=lambda: IANaoGasto(), banco=None))
     TelegramFalso.enviados = []
     return TestClient(index.app)
 
@@ -71,7 +81,7 @@ def test_responde_o_dono(cliente):
     assert resposta.status_code == 200
     chat_id, texto = TelegramFalso.enviados[0]
     assert chat_id == DONO
-    assert "Olá, Lucas" in texto
+    assert "Lucas" in texto
 
 
 def test_ignora_estranhos(cliente):
@@ -99,8 +109,9 @@ def test_configurar_exige_chave(cliente):
 
 
 def test_respostas_do_nucleo():
-    assert "Venire" in responder("/start")
-    assert "texto" in responder("")
+    deps = Dependencias(ia=lambda: IANaoGasto(), banco=None)
+    assert "Venire" in processar_texto("/start", deps).texto
+    assert "texto" in processar_texto("", deps).texto
 
 
 def test_configurar_usa_endereco_oficial(cliente, monkeypatch):

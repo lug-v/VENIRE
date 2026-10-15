@@ -1,2 +1,6 @@
 fastapi==0.115.12
 httpx==0.28.1
+psycopg[binary]==3.2.9
+google-auth==2.40.3
+requests==2.32.4
+tzdata==2025.2

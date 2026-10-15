@@ -3,10 +3,12 @@
 Rotas:
   GET  /                      → verifica se o Venire está no ar
   GET  /telegram/configurar   → registra o webhook no Telegram (protegido por senha)
-  POST /webhook               → recebe as mensagens do Telegram
+  GET  /telegram/diagnostico  → mostra erros do webhook (protegido por senha)
+  POST /webhook               → recebe as mensagens e os cliques nos botões
 """
 
 import hmac
+import logging
 import os
 import sys
 from pathlib import Path
@@ -16,9 +18,15 @@ from fastapi import FastAPI, Header, HTTPException, Request
 # Permite importar o pacote "venire" quando a Vercel executa este arquivo.
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from venire.banco import conectar  # noqa: E402
 from venire.canais.telegram import ErroTelegram, Telegram  # noqa: E402
-from venire.config import carregar_config  # noqa: E402
-from venire.nucleo.respostas import responder  # noqa: E402
+from venire.config import Config, carregar_config  # noqa: E402
+from venire.ia.groq import Groq  # noqa: E402
+from venire.nucleo.respostas import Dependencias, processar_botao, processar_texto  # noqa: E402
+from venire.servicos.planilha import Planilha  # noqa: E402
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("venire")
 
 app = FastAPI(title="Venire", docs_url=None, redoc_url=None)
 
@@ -33,10 +41,13 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 1,
+        "fase": 2,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,
+        "banco_configurado": bool(config.database_url),
+        "ia_configurada": bool(config.groq_api_key),
+        "planilha_configurada": bool(config.google_conta_servico_json and config.google_planilha_id),
     }
 
 
@@ -75,6 +86,16 @@ def diagnostico_telegram(chave: str = ""):
     }
 
 
+def montar_dependencias(config: Config) -> Dependencias:
+    tem_planilha = bool(config.google_conta_servico_json and config.google_planilha_id)
+    return Dependencias(
+        ia=lambda: Groq(config.groq_api_key, config.groq_modelo),
+        banco=lambda: conectar(config.database_url),
+        planilha=(lambda: Planilha(config.google_conta_servico_json, config.google_planilha_id))
+        if tem_planilha else None,
+    )
+
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
@@ -85,7 +106,8 @@ async def webhook(
         raise HTTPException(status_code=401, detail="Não autorizado.")
 
     update = await request.json()
-    mensagem = update.get("message") or {}
+    clique = update.get("callback_query") or {}
+    mensagem = update.get("message") or clique.get("message") or {}
     chat = mensagem.get("chat") or {}
     chat_id = chat.get("id")
     if chat_id is None or chat.get("type") != "private":
@@ -105,6 +127,19 @@ async def webhook(
     if chat_id != config.chat_id_autorizado:
         return {"ok": True}  # ignora estranhos sem responder
 
-    nome = (mensagem.get("from") or {}).get("first_name", "")
-    telegram.enviar(chat_id, responder(mensagem.get("text", ""), nome))
+    deps = montar_dependencias(config)
+    try:
+        if clique:
+            resposta = processar_botao(clique.get("data", ""), deps)
+            telegram.responder_botao(clique["id"])
+            telegram.editar(chat_id, mensagem["message_id"], resposta.texto)
+        else:
+            telegram.digitando(chat_id)
+            nome = (mensagem.get("from") or {}).get("first_name", "")
+            resposta = processar_texto(mensagem.get("text", ""), deps, nome)
+            telegram.enviar(chat_id, resposta.texto, resposta.botoes)
+    except Exception:
+        # Sempre responde 200 ao Telegram; senão ele reenvia a mesma mensagem várias vezes.
+        log.exception("Erro ao processar a mensagem")
+        telegram.enviar(chat_id, "😕 Tive um problema para processar isso. Tente de novo em instantes.")
     return {"ok": True}

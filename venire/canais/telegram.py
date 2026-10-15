@@ -1,4 +1,4 @@
-"""Conversa com a API do Telegram: enviar mensagens e registrar o webhook."""
+"""Conversa com a API do Telegram: enviar mensagens, botões e registrar o webhook."""
 
 import httpx
 
@@ -7,6 +7,13 @@ API = "https://api.telegram.org/bot{token}/{metodo}"
 
 class ErroTelegram(Exception):
     pass
+
+
+def teclado(botoes: list[tuple[str, str]]) -> dict | None:
+    """Transforma [(rótulo, dado)] em botões do Telegram, todos na mesma linha."""
+    if not botoes:
+        return None
+    return {"inline_keyboard": [[{"text": rotulo, "callback_data": dado} for rotulo, dado in botoes]]}
 
 
 class Telegram:
@@ -24,8 +31,23 @@ class Telegram:
             raise ErroTelegram(corpo.get("description", f"Falha em {metodo}"))
         return corpo["result"]
 
-    def enviar(self, chat_id: int, texto: str) -> dict:
-        return self.chamar("sendMessage", chat_id=chat_id, text=texto)
+    def enviar(self, chat_id: int, texto: str, botoes: list[tuple[str, str]] | None = None) -> dict:
+        dados = {"chat_id": chat_id, "text": texto}
+        if teclado(botoes or []):
+            dados["reply_markup"] = teclado(botoes)
+        return self.chamar("sendMessage", **dados)
+
+    def editar(self, chat_id: int, mensagem_id: int, texto: str) -> dict:
+        return self.chamar("editMessageText", chat_id=chat_id, message_id=mensagem_id, text=texto)
+
+    def responder_botao(self, callback_id: str, aviso: str = "") -> dict:
+        return self.chamar("answerCallbackQuery", callback_query_id=callback_id, text=aviso)
+
+    def digitando(self, chat_id: int) -> None:
+        try:
+            self.chamar("sendChatAction", chat_id=chat_id, action="typing")
+        except ErroTelegram:
+            pass
 
     def registrar_webhook(self, url: str, segredo: str) -> dict:
         self.chamar(
@@ -36,7 +58,8 @@ class Telegram:
             drop_pending_updates=True,
         )
         self.chamar("setMyCommands", commands=[
-            {"command": "start", "description": "Começar a usar o Venire"},
+            {"command": "gastos", "description": "Resumo dos gastos do mês"},
+            {"command": "semana", "description": "Resumo dos gastos da semana"},
             {"command": "ajuda", "description": "Ver o que o Venire sabe fazer"},
         ])
         return self.chamar("getMe")
