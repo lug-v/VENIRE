@@ -8,7 +8,7 @@ import httpx
 from venire.servicos.gastos import Gasto
 import base64
 
-from venire.servicos.planilha import CABECALHO, Planilha, ler_conta_servico
+from venire.servicos.planilha import CABECALHO, Planilha, ler_conta_servico, ler_id_planilha
 
 
 CONTA = '{"type": "service_account", "client_email": "robo@x.iam.gserviceaccount.com", "private_key": "k"}'
@@ -20,7 +20,7 @@ class GoogleFalso:
         self.chamadas: list[str] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        caminho = request.url.path.split("/spreadsheets/planilha123", 1)[1]
+        caminho = request.url.path.split("/spreadsheets/planilha123planilha123", 1)[1]
         self.chamadas.append(f"{request.method} {caminho}")
         if request.method == "GET" and caminho == "/values/A1:I1":
             return httpx.Response(200, json={"values": self.linhas[:1]})
@@ -39,7 +39,7 @@ class GoogleFalso:
 
 
 def criar_planilha(google):
-    planilha = Planilha(CONTA, "planilha123",
+    planilha = Planilha(CONTA, "planilha123planilha123",
                         cliente=httpx.Client(transport=httpx.MockTransport(google)))
     planilha._token = "token-falso"  # pula o login real no Google
     return planilha
@@ -114,3 +114,19 @@ def test_json_de_outra_coisa():
         assert "client_email" in str(erro)
     else:
         raise AssertionError("deveria ter falhado")
+
+
+ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcde"
+
+
+def test_id_da_planilha():
+    assert ler_id_planilha(ID) == ID
+    assert ler_id_planilha(f"  {ID}\n") == ID
+    assert ler_id_planilha(f"https://docs.google.com/spreadsheets/d/{ID}/edit#gid=0") == ID
+    for errado, trecho in [(CONTA, "JSON do robô"), ("abc\ndef", "não parece")]:
+        try:
+            ler_id_planilha(errado)
+        except Exception as erro:
+            assert trecho in str(erro)
+        else:
+            raise AssertionError("deveria ter falhado")

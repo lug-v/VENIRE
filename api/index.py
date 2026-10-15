@@ -95,7 +95,7 @@ def diagnostico_planilha(chave: str = ""):
         raise HTTPException(status_code=401, detail="Chave inválida.")
     resultado = {
         "json_cadastrado": bool(config.google_conta_servico_json),
-        "id_da_planilha": config.google_planilha_id or "(não cadastrado)",
+        "id_da_planilha_tem_caracteres": len(config.google_planilha_id),
     }
     try:
         planilha = Planilha(config.google_conta_servico_json, config.google_planilha_id)

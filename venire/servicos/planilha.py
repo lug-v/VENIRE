@@ -67,12 +67,29 @@ def ler_conta_servico(texto: str) -> dict:
     return info
 
 
+def ler_id_planilha(texto: str) -> str:
+    """Aceita o ID da planilha ou o link inteiro dela e devolve só o ID."""
+    import re
+
+    valor = (texto or "").strip().strip("'\"")
+    no_link = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]{20,})", valor)
+    if no_link:
+        return no_link.group(1)
+    if re.fullmatch(r"[A-Za-z0-9_-]{20,}", valor):
+        return valor
+    if valor.startswith("{"):
+        raise ErroPlanilha("GOOGLE_SHEET_ID está com o JSON do robô. Cole nele só o ID da planilha "
+                           "(o trecho entre /d/ e /edit no endereço) ou o link inteiro da planilha.")
+    raise ErroPlanilha(f"GOOGLE_SHEET_ID não parece um ID de planilha (tem {len(valor)} caracteres). "
+                       "Cole o trecho entre /d/ e /edit no endereço da planilha, ou o link inteiro.")
+
+
 class Planilha:
     def __init__(self, conta_servico_json: str, planilha_id: str, cliente: httpx.Client | None = None):
         if not conta_servico_json or not planilha_id:
             raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_SHEET_ID não configurados.")
         self._info = ler_conta_servico(conta_servico_json)
-        self._url = API.format(id=planilha_id)
+        self._url = API.format(id=ler_id_planilha(planilha_id))
         self._cliente = cliente or httpx.Client(timeout=20)
         self._token = None
 
