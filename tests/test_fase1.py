@@ -97,3 +97,9 @@ def test_configurar_exige_chave(cliente):
 def test_respostas_do_nucleo():
     assert "Venire" in responder("/start")
     assert "texto" in responder("")
+
+
+def test_configurar_usa_endereco_oficial(cliente, monkeypatch):
+    monkeypatch.setenv("VERCEL_PROJECT_PRODUCTION_URL", "venire-oficial.vercel.app")
+    cliente.get("/telegram/configurar?chave=senha-de-teste")
+    assert TelegramFalso.webhook["url"] == "https://venire-oficial.vercel.app/webhook"

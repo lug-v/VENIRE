@@ -7,6 +7,7 @@ Rotas:
 """
 
 import hmac
+import os
 import sys
 from pathlib import Path
 
@@ -44,7 +45,10 @@ def configurar_telegram(request: Request, chave: str = ""):
     config = carregar_config()
     if not iguais(chave, config.venire_secret):
         raise HTTPException(status_code=401, detail="Chave inválida.")
-    url = f"https://{request.headers.get('host')}/webhook"
+    # Usa sempre o endereço oficial (produção). Endereços de um deploy específico
+    # mudam a cada publicação e ficam protegidos por login da Vercel.
+    dominio = os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or request.headers.get("host")
+    url = f"https://{dominio}/webhook"
     try:
         bot = Telegram(config.telegram_token).registrar_webhook(url, config.segredo_webhook)
     except ErroTelegram as erro:
