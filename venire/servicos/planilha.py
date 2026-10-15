@@ -13,11 +13,37 @@ ESCOPO = ["https://www.googleapis.com/auth/spreadsheets"]
 CABECALHO = ["ID", "Data", "Valor", "Categoria", "Descrição", "Estabelecimento", "Pagamento", "Origem", "Mensagem"]
 
 
+class ErroPlanilha(Exception):
+    pass
+
+
+def _verificar(resposta: httpx.Response) -> None:
+    """Transforma erros do Google em mensagens que dizem o que fazer."""
+    if resposta.status_code < 400:
+        return
+    try:
+        detalhe = resposta.json().get("error", {}).get("message", "")
+    except ValueError:
+        detalhe = resposta.text[:200]
+    dicas = {
+        403: "o robô não tem acesso: compartilhe a planilha com o e-mail dele como Editor "
+             "e confira se a Google Sheets API está ativada no projeto do Google Cloud",
+        404: "planilha não encontrada: confira o GOOGLE_SHEET_ID (trecho entre /d/ e /edit)",
+        400: "pedido inválido para a planilha",
+    }
+    dica = dicas.get(resposta.status_code, "erro do Google")
+    raise ErroPlanilha(f"{resposta.status_code} – {dica}. Detalhe do Google: {detalhe}")
+
+
 class Planilha:
     def __init__(self, conta_servico_json: str, planilha_id: str, cliente: httpx.Client | None = None):
         if not conta_servico_json or not planilha_id:
             raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_SHEET_ID não configurados.")
-        self._info = json.loads(conta_servico_json)
+        try:
+            self._info = json.loads(conta_servico_json)
+        except json.JSONDecodeError as erro:
+            raise ErroPlanilha("GOOGLE_SERVICE_ACCOUNT_JSON não é um JSON válido: copie o arquivo inteiro, "
+                               "do { inicial ao } final") from erro
         self._url = API.format(id=planilha_id)
         self._cliente = cliente or httpx.Client(timeout=20)
         self._token = None
@@ -34,13 +60,21 @@ class Planilha:
 
     def _get(self, caminho: str, **params) -> dict:
         resposta = self._cliente.get(self._url + caminho, headers=self._cabecalhos(), params=params)
-        resposta.raise_for_status()
+        _verificar(resposta)
         return resposta.json()
 
     def _post(self, caminho: str, corpo: dict, **params) -> dict:
         resposta = self._cliente.post(self._url + caminho, headers=self._cabecalhos(), json=corpo, params=params)
-        resposta.raise_for_status()
+        _verificar(resposta)
         return resposta.json()
+
+    @property
+    def email_robo(self) -> str:
+        return self._info.get("client_email", "")
+
+    def testar(self) -> str:
+        """Lê o título da planilha. Serve para o diagnóstico."""
+        return self._get("", fields="properties.title")["properties"]["title"]
 
     def _garantir_cabecalho(self) -> None:
         primeira = self._get("/values/A1:I1").get("values", [])

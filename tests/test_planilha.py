@@ -55,3 +55,25 @@ def test_adiciona_cabecalho_e_linhas_e_remove():
     assert planilha.remover(primeiro.id) is True
     assert [linha[0] for linha in google.linhas] == ["ID", segundo.id]
     assert planilha.remover("nao-existe") is False
+
+
+def test_erro_403_explica_o_que_fazer():
+    def google(request):
+        return httpx.Response(403, json={"error": {"message": "The caller does not have permission"}})
+    planilha = criar_planilha(google)
+    try:
+        planilha.testar()
+    except Exception as erro:
+        assert "compartilhe a planilha" in str(erro)
+        assert "does not have permission" in str(erro)
+    else:
+        raise AssertionError("deveria ter falhado")
+
+
+def test_json_invalido():
+    try:
+        Planilha("isso não é json", "planilha123")
+    except Exception as erro:
+        assert "JSON válido" in str(erro)
+    else:
+        raise AssertionError("deveria ter falhado")

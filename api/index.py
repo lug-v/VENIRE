@@ -4,6 +4,7 @@ Rotas:
   GET  /                      → verifica se o Venire está no ar
   GET  /telegram/configurar   → registra o webhook no Telegram (protegido por senha)
   GET  /telegram/diagnostico  → mostra erros do webhook (protegido por senha)
+  GET  /planilha/diagnostico  → testa o acesso à Google Planilha (protegido por senha)
   POST /webhook               → recebe as mensagens e os cliques nos botões
 """
 
@@ -84,6 +85,27 @@ def diagnostico_telegram(chave: str = ""):
         "ultimo_erro": info.get("last_error_message") or "(nenhum)",
         "ultimo_erro_em": info.get("last_error_date"),
     }
+
+
+@app.get("/planilha/diagnostico")
+def diagnostico_planilha(chave: str = ""):
+    """Testa o acesso à Google Planilha e explica o erro, se houver."""
+    config = carregar_config()
+    if not iguais(chave, config.venire_secret):
+        raise HTTPException(status_code=401, detail="Chave inválida.")
+    resultado = {
+        "json_cadastrado": bool(config.google_conta_servico_json),
+        "id_da_planilha": config.google_planilha_id or "(não cadastrado)",
+    }
+    try:
+        planilha = Planilha(config.google_conta_servico_json, config.google_planilha_id)
+        resultado["email_do_robo"] = planilha.email_robo
+        resultado["titulo_da_planilha"] = planilha.testar()
+        resultado["ok"] = True
+    except Exception as erro:
+        resultado["ok"] = False
+        resultado["erro"] = str(erro)[:600]
+    return resultado
 
 
 def montar_dependencias(config: Config) -> Dependencias:

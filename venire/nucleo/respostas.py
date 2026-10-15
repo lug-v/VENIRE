@@ -73,9 +73,9 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "") -> Resposta:
     if deps.planilha:
         try:
             deps.planilha().adicionar(gasto)
-        except Exception:  # a planilha é uma cópia; o gasto já está salvo no banco
+        except Exception as erro:  # a planilha é uma cópia; o gasto já está salvo no banco
             log.exception("Falha ao copiar o gasto para a planilha")
-            texto_resposta += "\n\n⚠️ Salvei no banco, mas não consegui copiar para a planilha."
+            texto_resposta += f"\n\n⚠️ Salvei no banco, mas não consegui copiar para a planilha.\nMotivo: {erro}"
     return Resposta(texto_resposta, [("↩️ Desfazer", f"desfazer:{gasto.id}")])
 
 
