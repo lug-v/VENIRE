@@ -211,18 +211,19 @@ Considerando hoje = terça, 13/10/2026:
 |---|---|---|
 | 5 | Corrigir, cancelar e perguntar | a fazer |
 | 6 | Avisos e resumos automáticos | ✅ concluída |
-| 7 | **Receitas e saldo do mês** (inclui a projeção do fim do mês) | a fazer |
+| 7 | **Receitas e saldo do mês** (inclui a projeção do fim do mês) | ✅ concluída (18/10/2026) |
 | 8 | **Rotina e contas**: compromissos recorrentes, contas fixas com vencimento, lista de tarefas | a fazer |
 | 9 | Orçamentos por categoria e alertas de gasto fora do padrão (antiga fase 7) | a fazer |
 | 10 | **Painel web dos gastos** + integração com o clari-analytics (antiga fase 8) | a fazer |
 
-### Fase 7 — Receitas e saldo
+### Fase 7 — Receitas e saldo ✅
 - Registrar ganhos por texto, áudio ou foto (comprovante de Pix recebido): "ganhei 2000 reais", "recebi 50 reais", "caiu o salário de 3.500", "comissão de 800".
-- Categorias de receita: Salário, Comissão, Extra/Freela, Reembolso, Presente, Investimentos, Outros.
+- Categorias de receita: Salário, Comissão, Extra, Reembolso, Presente, Investimentos, Outros.
 - Tabela própria (`incomes`), separada de `expenses`, para não quebrar o clari-analytics; também vai para a planilha (aba "Receitas").
 - `/saldo`: receitas − despesas do mês até agora, e quanto da renda já foi gasto (%).
 - Resumo da manhã ganha a linha de saldo do mês e a projeção do fechamento (fixos + ritmo diário dos variáveis, lógica da Aula 6 do clari-analytics).
 - Fechamento do mês: no dia 1º, às 6h30, "Outubro fechou: entrou R$ X, saiu R$ Y, sobrou R$ Z (Z% da renda)", com comparação com o mês anterior. Se ficou negativo, mostra as 3 categorias que mais pesaram.
+- Como ficou no código: `servicos/receitas.py` (modelo, tabela `incomes`, salvar/apagar/total) e `servicos/financas.py` (saldo, projeção, fechamento). A IA continua fazendo uma única chamada por mensagem, agora com quatro tipos: gasto, receita, evento ou outro. O fechamento usa a tabela `envios`, então chega uma vez só. A projeção considera as receitas do mês anterior quando o salário ainda não caiu.
 
 ### Fase 8 — Rotina e contas
 - Compromissos recorrentes no Google Agenda: "toda terça e quinta Muay Thai às 19h".

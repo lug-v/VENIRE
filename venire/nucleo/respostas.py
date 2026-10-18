@@ -16,7 +16,7 @@ from venire.config import FUSO
 from venire.datas import descrever, hoje, hora_atual
 from venire.nucleo import automacoes
 from venire.nucleo.interpretador import interpretar, interpretar_foto
-from venire.servicos import eventos, gastos
+from venire.servicos import eventos, financas, gastos, receitas
 from venire.servicos.eventos import Evento
 
 log = logging.getLogger("venire")
@@ -33,6 +33,11 @@ AJUDA = (
     "• gasto 15 reais energético\n"
     "• almoço 32,90 ontem no débito\n"
     "Resumos: /gastos (mês) e /semana\n\n"
+    "💵 Receitas\n"
+    "• recebi 2000 de salário\n"
+    "• ganhei 50 reais\n"
+    "• comissão de 800\n"
+    "Saldo do mês: /saldo\n\n"
     "🎙️ Áudio: fale do mesmo jeito que escreveria.\n"
     "📸 Foto: mande a nota fiscal, o comprovante do Pix ou um convite.\n\n"
     "⏰ Automático: aviso 1 hora antes de cada compromisso, resumo às 6h30 (clima, dólar, agenda e gastos), "
@@ -71,6 +76,10 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
     if comando == "/gastos":
         with deps.banco() as conexao:
             return Resposta(gastos.resumo_mes(conexao, deps.hoje()))
+    if comando == "/saldo":
+        with deps.banco() as conexao:
+            bloco = financas.bloco_do_mes(conexao, deps.hoje())
+        return Resposta(bloco or "💰 Ainda não há gastos nem receitas registrados neste mês.")
     if comando == "/semana":
         with deps.banco() as conexao:
             return Resposta(gastos.resumo_semana(conexao, deps.hoje()))
@@ -91,6 +100,8 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
     tipo = dados.get("tipo")
     if tipo == "gasto":
         return registrar_gasto(dados, texto, deps, origem)
+    if tipo == "receita":
+        return registrar_receita(dados, texto, deps, origem)
     if tipo == "evento":
         return agendar_pedido(dados, texto, deps)
     saudacao = f", {nome}" if nome else ""
@@ -117,6 +128,10 @@ def processar_foto(imagem: bytes, tipo: str, legenda: str, deps: Dependencias) -
     origem_texto = f"Foto: {legenda}" if legenda else "Foto"
     if dados.get("tipo") == "gasto":
         resposta = registrar_gasto(dados, origem_texto, deps, origem="foto")
+        resposta.texto = "📸 " + resposta.texto
+        return [resposta]
+    if dados.get("tipo") == "receita":
+        resposta = registrar_receita(dados, origem_texto, deps, origem="foto")
         resposta.texto = "📸 " + resposta.texto
         return [resposta]
     if dados.get("tipo") == "eventos":
@@ -150,6 +165,27 @@ def registrar_gasto(dados: dict, texto: str, deps: Dependencias, origem: str = "
             log.exception("Falha ao copiar o gasto para a planilha")
             texto_resposta += f"\n\n⚠️ Salvei no banco, mas não consegui copiar para a planilha.\nMotivo: {erro}"
     return Resposta(texto_resposta, [("↩️ Desfazer", f"desfazer:{gasto.id}")])
+
+
+def registrar_receita(dados: dict, texto: str, deps: Dependencias, origem: str = "texto") -> Resposta:
+    receita = receitas.de_dados(dados, texto, deps.hoje())
+    if receita is None:
+        return Resposta("Não encontrei o valor recebido. Tente algo como “recebi 2000 de salário”.")
+    receita.origem = origem
+    with deps.banco() as conexao:
+        receitas.salvar(conexao, receita)
+        saldo = financas.mes(conexao, deps.hoje().replace(day=1), deps.hoje()).saldo
+
+    texto_resposta = receitas.confirmacao(receita)
+    sentido = "sobra" if saldo >= 0 else "falta"
+    texto_resposta += f"\n\n💰 Saldo do mês: {sentido} de {financas.reais(saldo)}"
+    if deps.planilha:
+        try:
+            deps.planilha().adicionar_receita(receita)
+        except Exception as erro:
+            log.exception("Falha ao copiar a receita para a planilha")
+            texto_resposta += f"\n\n⚠️ Salvei no banco, mas não consegui copiar para a planilha.\nMotivo: {erro}"
+    return Resposta(texto_resposta, [("↩️ Desfazer", f"dr:{receita.id}")])
 
 
 def agendar_pedido(dados: dict, texto: str, deps: Dependencias) -> Resposta:
@@ -218,6 +254,19 @@ def processar_botao(dado: str, deps: Dependencias) -> Resposta:
 
     if acao == "desfazer" and resto:
         return desfazer_gasto(resto, deps)
+
+    if acao == "dr" and resto:
+        with deps.banco() as conexao:
+            apagada = receitas.apagar(conexao, resto)
+        if not apagada:
+            return Resposta("Essa receita já tinha sido removida.")
+        if deps.planilha:
+            try:
+                deps.planilha().remover_receita(resto)
+            except Exception:
+                log.exception("Falha ao remover a receita da planilha")
+                return Resposta("↩️ Receita removida do banco. ⚠️ Apague a linha na aba Receitas manualmente.")
+        return Resposta("↩️ Receita desfeita.")
 
     if acao == "dev" and resto:
         try:

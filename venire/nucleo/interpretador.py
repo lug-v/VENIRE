@@ -4,12 +4,14 @@ A IA só EXTRAI o que foi dito. Datas, horas e validações são calculadas em P
 """
 
 from venire.servicos.gastos import CATEGORIAS, PAGAMENTOS
+from venire.servicos.receitas import CATEGORIAS_RECEITA
 
 INSTRUCOES = f"""Você é o interpretador do Venire, assessor pessoal de um brasileiro.
 Classifique a mensagem e extraia os campos. Responda APENAS um JSON.
 
-"tipo": "gasto" (registra um gasto já feito), "evento" (pede para agendar/marcar um compromisso)
-ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
+"tipo": "gasto" (registra um gasto já feito), "receita" (registra um dinheiro que ENTROU: "ganhei",
+"recebi", "caiu o salário", "comissão de 800", "me pagaram"), "evento" (pede para agendar/marcar um
+compromisso) ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
 
 Se tipo = "gasto":
 - "valor": número em reais (ex.: 15, 249.9). Aceite "15 reais", "R$ 15", "15,50", "1.200". Nunca invente.
@@ -21,6 +23,15 @@ Se tipo = "gasto":
   Streaming e academia = Assinaturas.
 - "forma_pagamento": exatamente uma de: {", ".join(PAGAMENTOS)}.
 - "quando": a expressão de tempo como foi dita ("ontem", "sexta", "dia 10") ou "".
+
+Se tipo = "receita":
+- "valor": número em reais. Nunca invente.
+- "descricao": de onde veio, curto e em minúsculas (ex.: "salário", "venda do celular").
+- "pagador": quem pagou, se dito (ex.: "João", "De Toni"); senão "".
+- "categoria_receita": exatamente uma de: {", ".join(CATEGORIAS_RECEITA)}.
+  Bônus e premiação de vendas = Comissão. Bico, freela e venda de algo usado = Extra.
+  Dinheiro devolvido ou ressarcido = Reembolso. Rendimento, dividendos e juros = Investimentos.
+- "quando": a expressão de tempo como foi dita ou "".
 
 Se tipo = "evento":
 - "titulo": o compromisso em poucas palavras, sem data nem hora (ex.: "reunião", "revisão do carro").
@@ -45,7 +56,10 @@ def interpretar(texto: str, ia) -> dict:
 INSTRUCOES_FOTO = f"""Você analisa uma foto enviada ao Venire, assessor pessoal de um brasileiro. Responda APENAS um JSON.
 
 "tipo":
-- "gasto": nota fiscal, cupom, recibo ou comprovante de pagamento (Pix, cartão, boleto pago).
+- "gasto": nota fiscal, cupom, recibo ou comprovante de um pagamento FEITO (Pix enviado, cartão, boleto pago).
+- "receita": comprovante de dinheiro RECEBIDO (Pix recebido, transferência recebida, crédito de salário).
+  Num comprovante de Pix, se a legenda ou o texto indicar "recebido"/"você recebeu", é receita; se indicar
+  "enviado"/"você pagou", é gasto. Na dúvida, use a legenda; sem legenda, considere gasto.
 - "eventos": a foto mostra compromissos (convite, cartaz de evento, agenda escrita, print de conversa marcando algo).
 - "outro": qualquer outra coisa.
 
@@ -56,6 +70,10 @@ Se tipo = "gasto":
 - "categoria": exatamente uma de: {", ".join(CATEGORIAS)}.
 - "forma_pagamento": exatamente uma de: {", ".join(PAGAMENTOS)}.
 - "quando": a data impressa no documento no formato DD/MM/AAAA, ou "" se não houver.
+
+Se tipo = "receita":
+- "valor", "descricao", "pagador" (quem enviou o dinheiro), "quando" (DD/MM/AAAA impresso) e
+  "categoria_receita": exatamente uma de: {", ".join(CATEGORIAS_RECEITA)}.
 
 Se tipo = "eventos":
 - "eventos": lista com no máximo 5 compromissos, cada um com "titulo", "data_texto" (como aparece:

@@ -4,6 +4,8 @@ O banco é a fonte oficial; a planilha é a sua "janela" para ver tudo em tabela
 Se a planilha falhar, o gasto continua salvo no banco.
 """
 
+from urllib.parse import quote
+
 import httpx
 
 from venire.servicos.google import ErroGoogle, ler_conta_servico, token, verificar
@@ -11,6 +13,8 @@ from venire.servicos.google import ErroGoogle, ler_conta_servico, token, verific
 API = "https://sheets.googleapis.com/v4/spreadsheets/{id}"
 ESCOPO = ["https://www.googleapis.com/auth/spreadsheets"]
 CABECALHO = ["ID", "Data", "Valor", "Categoria", "Descrição", "Estabelecimento", "Pagamento", "Origem", "Mensagem"]
+ABA_RECEITAS = "Receitas"
+CABECALHO_RECEITAS = ["ID", "Data", "Valor", "Categoria", "Descrição", "De quem", "Origem", "Mensagem"]
 
 
 ErroPlanilha = ErroGoogle
@@ -86,13 +90,39 @@ class Planilha:
         self._post("/values/A:I:append", {"values": [linha]},
                    valueInputOption="USER_ENTERED", insertDataOption="INSERT_ROWS")
 
-    def remover(self, gasto_id: str) -> bool:
-        ids = [linha[0] if linha else "" for linha in self._get("/values/A:A").get("values", [])]
+    def remover(self, gasto_id: str, aba_nome: str | None = None) -> bool:
+        prefixo = f"/values/{quote(aba_nome)}!" if aba_nome else "/values/"
+        ids = [linha[0] if linha else "" for linha in self._get(prefixo + "A:A").get("values", [])]
         if gasto_id not in ids:
             return False
-        aba = self._get("", fields="sheets.properties.sheetId")["sheets"][0]["properties"]["sheetId"]
+        abas = self._get("", fields="sheets.properties(sheetId,title)")["sheets"]
+        if aba_nome:
+            aba = next(a["properties"]["sheetId"] for a in abas if a["properties"]["title"] == aba_nome)
+        else:
+            aba = abas[0]["properties"]["sheetId"]
         indice = ids.index(gasto_id)
         self._post(":batchUpdate", {"requests": [{"deleteDimension": {"range": {
             "sheetId": aba, "dimension": "ROWS", "startIndex": indice, "endIndex": indice + 1,
         }}}]})
         return True
+
+    # ---------------------------------------------------------------- Receitas (aba própria)
+
+    def _garantir_aba_receitas(self) -> None:
+        abas = self._get("", fields="sheets.properties.title")["sheets"]
+        if not any(a["properties"]["title"] == ABA_RECEITAS for a in abas):
+            self._post(":batchUpdate", {"requests": [{"addSheet": {"properties": {"title": ABA_RECEITAS}}}]})
+            self._post(f"/values/{quote(ABA_RECEITAS)}!A1:H1:append", {"values": [CABECALHO_RECEITAS]},
+                       valueInputOption="RAW")
+
+    def adicionar_receita(self, receita) -> None:
+        self._garantir_aba_receitas()
+        linha = [
+            receita.id, receita.data.strftime("%d/%m/%Y"), float(receita.valor), receita.categoria,
+            receita.descricao, receita.pagador, receita.origem, receita.texto_original,
+        ]
+        self._post(f"/values/{quote(ABA_RECEITAS)}!A:H:append", {"values": [linha]},
+                   valueInputOption="USER_ENTERED", insertDataOption="INSERT_ROWS")
+
+    def remover_receita(self, receita_id: str) -> bool:
+        return self.remover(receita_id, ABA_RECEITAS)

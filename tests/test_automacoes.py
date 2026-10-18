@@ -15,7 +15,7 @@ from api import index
 from venire import envios, pendencias
 from venire.nucleo import automacoes
 from venire.nucleo.respostas import Dependencias, processar_texto
-from venire.servicos import gastos
+from venire.servicos import gastos, receitas
 from venire.servicos.cambio import Cambio
 from venire.servicos.clima import Clima, PrevisaoDia
 
@@ -132,7 +132,7 @@ def deps():
     if not URL_TESTE:
         pytest.skip("TEST_DATABASE_URL não configurada")
     with psycopg.connect(URL_TESTE, autocommit=True) as conexao:
-        for tabela, modulo in (("expenses", gastos), ("pendencias", pendencias), ("envios", envios)):
+        for tabela, modulo in (("expenses", gastos), ("pendencias", pendencias), ("envios", envios), ("incomes", receitas)):
             conexao.execute(f"DROP TABLE IF EXISTS {tabela}")
             modulo.criar_tabela(conexao)
 
@@ -165,7 +165,7 @@ def test_resumo_da_manha_completo(deps):
     assert "💵 Dólar (PTAX 16/10): R$ 5,42" in texto
     assert "• 19:00–20:00 — Treino" in texto
     assert "☔ 80% de chance de chuva às 19h, no horário de “Treino”" in texto
-    assert "💰 Outubro até agora: R$ 150,50 em 2 gastos" in texto
+    assert "💰 Outubro até agora\nEntrou R$ 0,00 · Saiu R$ 150,50\nSaldo: falta de R$ 150,50" in texto
 
 
 def test_resumo_continua_se_uma_parte_falhar(deps):
@@ -222,4 +222,4 @@ def test_rotas_cron_exigem_chave(monkeypatch):
     assert cliente.get("/cron/noite?chave=senha").json() == {"ok": True, "enviados": 1}
     assert cliente.get("/cron/noite", headers={"Authorization": "Bearer senha"}).status_code == 200
     assert len(chamadas) == 2
-    assert json.loads(json.dumps(cliente.get("/").json()))["fase"] == 6
+    assert json.loads(json.dumps(cliente.get("/").json()))["fase"] == 7

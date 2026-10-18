@@ -77,6 +77,7 @@ class Telegram:
             {"command": "hoje", "description": "Resumo de hoje: clima, dólar, agenda e gastos"},
             {"command": "amanha", "description": "Previsão e compromissos de amanhã"},
             {"command": "agenda", "description": "Compromissos de hoje e amanhã"},
+            {"command": "saldo", "description": "Entradas, saídas, saldo e projeção do mês"},
             {"command": "gastos", "description": "Resumo dos gastos do mês"},
             {"command": "semana", "description": "Resumo dos gastos da semana"},
             {"command": "ajuda", "description": "Ver o que o Venire sabe fazer"},

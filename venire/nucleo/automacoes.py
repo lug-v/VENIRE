@@ -11,13 +11,11 @@ from typing import Callable
 
 from venire import envios
 from venire.datas import descrever, inicio_da_semana
-from venire.servicos import eventos, gastos
+from venire.servicos import eventos, financas, gastos
 
 log = logging.getLogger("venire")
 
 LIMITE_CHUVA = 50  # % a partir do qual o Venire avisa sobre chuva num compromisso
-MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
-         "agosto", "setembro", "outubro", "novembro", "dezembro"]
 
 
 # ---------------------------------------------------------------- Peças dos resumos
@@ -90,13 +88,11 @@ def resumo_do_dia(deps, dia: date, titulo: str, com_dolar_e_gastos: bool) -> str
     if com_dolar_e_gastos:
         try:
             with deps.banco() as conexao:
-                soma, quantidade = gastos.total(conexao, dia.replace(day=1), dia)
-            if quantidade:
-                linhas += ["", f"💰 {MESES[dia.month - 1].capitalize()} até agora: "
-                               f"{gastos.formatar_reais(soma)} em {quantidade} "
-                               f"{'gasto' if quantidade == 1 else 'gastos'}"]
+                bloco = financas.bloco_do_mes(conexao, dia)
+            if bloco:
+                linhas += ["", bloco]
         except Exception:
-            log.exception("Falha ao somar os gastos do mês")
+            log.exception("Falha ao montar o saldo do mês")
 
     return "\n".join(linhas).strip()
 
@@ -139,6 +135,12 @@ def executar_manha(deps, enviar: Callable[[str], None]) -> dict:
     enviados += _enviar_uma_vez(deps, f"manha:{hoje}", texto, enviar)
     if hoje.weekday() == 0:  # segunda-feira
         enviados += _enviar_uma_vez(deps, f"semana:{hoje}", resumo_semana_passada(deps, hoje), enviar)
+    if hoje.day == 1:  # fechamento do mês que acabou
+        mes_passado = hoje - timedelta(days=1)
+        with deps.banco() as conexao:
+            texto_fechamento = financas.fechamento(conexao, mes_passado)
+        if texto_fechamento:
+            enviados += _enviar_uma_vez(deps, f"fechamento:{mes_passado:%Y-%m}", texto_fechamento, enviar)
     return {"enviados": enviados}
 
 

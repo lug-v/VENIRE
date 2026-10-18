@@ -52,7 +52,7 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 6,
+        "fase": 7,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,

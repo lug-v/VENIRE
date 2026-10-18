@@ -1,6 +1,6 @@
 # Venire
 
-Assessor pessoal no Telegram: agenda no Google Agenda, registro e análise de gastos, e resumo diário com clima e dólar. Feito em Python, com custo zero.
+Assessor pessoal no Telegram: agenda no Google Agenda, gastos e receitas com saldo do mês, e resumo diário com clima e dólar. Feito em Python, com custo zero.
 
 Plano completo: [docs/PLANO.md](docs/PLANO.md)
 
@@ -13,7 +13,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 4 — Áudio e foto
 - [ ] Fase 5 — Corrigir, cancelar e perguntar
 - [x] Fase 6 — Aviso 1 hora antes, resumo das 6h30, da noite e semanal
-- [ ] Fase 7 — Receitas e saldo do mês (com projeção do fechamento)
+- [x] Fase 7 — Receitas e saldo do mês (com projeção do fechamento)
 - [ ] Fase 8 — Rotina e contas: recorrentes, contas fixas e tarefas
 - [ ] Fase 9 — Orçamentos e alertas
 - [ ] Fase 10 — Painel web e integração com o clari-analytics
@@ -36,7 +36,9 @@ venire/
 │   └── servicos/
 │       ├── google.py         # login do robô no Google e erros explicados
 │       ├── gastos.py         # interpretar, salvar, desfazer e resumir gastos
-│       ├── planilha.py       # cópia dos gastos na Google Planilha
+│       ├── receitas.py       # interpretar, salvar e desfazer receitas (tabela incomes)
+│       ├── financas.py       # saldo do mês, projeção do fechamento e fechamento mensal
+│       ├── planilha.py       # cópia na Google Planilha (aba de gastos + aba Receitas)
 │       ├── eventos.py        # monta o compromisso e formata as respostas
 │       └── calendario.py     # Google Agenda: criar, apagar, listar e conflitos
 ├── tests/                  # python -m pytest
@@ -116,6 +118,17 @@ Crie 3 tarefas em **Create cronjob**, todas com **Time zone: America/Sao_Paulo**
 Cada envio é registrado na tabela `envios`, então o mesmo aviso nunca chega duas vezes. Se o Telegram falhar, a próxima chamada tenta de novo.
 
 Variáveis opcionais: `CIDADE`, `LATITUDE` e `LONGITUDE` (padrão: Bento Gonçalves). Clima pelo [Open-Meteo](https://open-meteo.com) e dólar pela API de dados abertos do Banco Central, ambos gratuitos e sem chave.
+
+## Receitas e saldo (fase 7)
+
+- Mande “ganhei 2000 reais”, “recebi 50 do João”, “comissão de 800” ou a foto de um Pix recebido. A receita vai para a tabela `incomes` e para a aba **Receitas** da planilha (criada sozinha). Tem botão ↩️ Desfazer.
+- `/saldo`: quanto entrou, quanto saiu, o saldo e quanto da renda já foi gasto. A partir do dia 3, mostra a **projeção do fechamento**:
+  - gastos fixos (Moradia, Educação, Assinaturas): o maior valor entre este mês e o anterior;
+  - gastos variáveis: o ritmo diário × dias do mês;
+  - receitas: o maior valor entre este mês e o anterior (o salário pode ainda não ter caído).
+- O resumo das 6h30 traz o mesmo bloco de saldo.
+- No dia 1, chega o **fechamento do mês anterior**: quanto sobrou ou faltou, a comparação com o mês anterior e, se faltou, as categorias que mais pesaram.
+- Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para o `/saldo` aparecer no menu.
 
 ## Rodar no seu computador
 
