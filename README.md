@@ -13,8 +13,10 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 4 — Áudio e foto
 - [ ] Fase 5 — Corrigir, cancelar e perguntar
 - [x] Fase 6 — Aviso 1 hora antes, resumo das 6h30, da noite e semanal
-- [ ] Fase 7 — Orçamentos, alertas e mais testes
-- [ ] Fase 8 — Integração com o clari-analytics
+- [ ] Fase 7 — Receitas e saldo do mês (com projeção do fechamento)
+- [ ] Fase 8 — Rotina e contas: recorrentes, contas fixas e tarefas
+- [ ] Fase 9 — Orçamentos e alertas
+- [ ] Fase 10 — Painel web e integração com o clari-analytics
 
 ## Estrutura
 
