@@ -199,4 +199,8 @@ Considerando hoje = terça, 13/10/2026:
   - Lição: depois de cadastrar uma variável, só o Redeploy faz a versão no ar enxergá-la.
 - **Fase 4 — concluída (18/10/2026):** áudio transcrito pelo Whisper (`whisper-large-v3-turbo`) segue o caminho do texto, mostrando o que foi entendido; foto lida pela IA de visão (`qwen/qwen3.8-27b`): nota fiscal ou comprovante vira gasto (valor total, loja, data impressa), convite ou agenda viram até 5 compromissos, e sem reconhecimento a legenda vale como mensagem. Sem variável nova.
   - Limites: 20 MB para baixar do Telegram, 4 MB para imagem enviada à IA; função da Vercel com até 60 s.
+- **Fase 6 — concluída (18/10/2026, antes da fase 5 por escolha do Lucas):** aviso 1 hora antes (checagem a cada 5 min), resumo das 6h30 (clima Open-Meteo, dólar PTAX/BCB, agenda, alerta de chuva no horário dos compromissos, gastos do mês), resumo de gastos da semana passada às segundas, resumo da noite às 21h, comandos `/hoje` e `/amanha`.
+  - Agendador: cron-job.org com 3 tarefas (fuso America/Sao_Paulo): `/cron/lembretes` a cada 5 min, `/cron/manha` às 06:30 e `/cron/noite` às 21:00, todas com `?chave=VENIRE_SECRET`.
+  - Tabela `envios` garante envio único e nova tentativa se o Telegram falhar. Variáveis opcionais: `CIDADE`, `LATITUDE`, `LONGITUDE` (padrão Bento Gonçalves).
+  - Ficou de fora, por escolha: projeção de gastos do fim do mês (pode entrar na fase 7 ou 8).
 - **Próxima:** fase 5 — corrigir, cancelar e perguntar ("na verdade foram 25", "desmarca a revisão do carro", "quanto gastei com gasolina?").
