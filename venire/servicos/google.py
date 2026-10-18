@@ -3,6 +3,8 @@
 import base64
 import json
 
+import time
+
 import httpx
 
 
@@ -40,20 +42,32 @@ def ler_conta_servico(texto: str) -> dict:
     return info
 
 
-_tokens: dict[tuple, str] = {}
+_tokens: dict[tuple, tuple[str, float]] = {}
+VALIDADE = 45 * 60  # o Google aceita o token por 1 hora; renovamos antes disso
 
 
 def token(info: dict, escopos: list[str]) -> str:
-    """Faz o login do robô e guarda o token enquanto a função estiver "acordada"."""
-    chave = (info.get("client_email"), tuple(escopos))
-    if chave not in _tokens:
-        from google.auth.transport.requests import Request
-        from google.oauth2 import service_account
+    """Faz o login do robô e reaproveita o token por até 45 minutos.
 
-        credenciais = service_account.Credentials.from_service_account_info(info, scopes=escopos)
-        credenciais.refresh(Request())
-        _tokens[chave] = credenciais.token
-    return _tokens[chave]
+    Na Vercel a função pode ficar "acordada" por horas (o cron chama a cada 5 minutos),
+    então o token precisa ser renovado antes de expirar.
+    """
+    chave = (info.get("client_email"), tuple(escopos))
+    guardado = _tokens.get(chave)
+    if guardado and time.monotonic() < guardado[1]:
+        return guardado[0]
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+
+    credenciais = service_account.Credentials.from_service_account_info(info, scopes=escopos)
+    credenciais.refresh(Request())
+    _tokens[chave] = (credenciais.token, time.monotonic() + VALIDADE)
+    return credenciais.token
+
+
+def esquecer_token(info: dict, escopos: list[str]) -> None:
+    """Descarta o token guardado (usado quando o Google responde 401)."""
+    _tokens.pop((info.get("client_email"), tuple(escopos)), None)
 
 
 def verificar(resposta: httpx.Response, dicas: dict[int, str]) -> None:

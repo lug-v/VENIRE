@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import httpx
 
-from venire.servicos.google import ErroGoogle, ler_conta_servico, token, verificar
+from venire.servicos.google import ErroGoogle, esquecer_token, ler_conta_servico, token, verificar
 
 API = "https://sheets.googleapis.com/v4/spreadsheets/{id}"
 ESCOPO = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -54,19 +54,21 @@ class Planilha:
         self._token = None
 
     def _cabecalhos(self) -> dict:
-        if self._token is None:
-            self._token = token(self._info, ESCOPO)
-        return {"Authorization": f"Bearer {self._token}"}
+        return {"Authorization": f"Bearer {self._token or token(self._info, ESCOPO)}"}
+
+    def _pedir(self, metodo: str, caminho: str, **kwargs) -> httpx.Response:
+        resposta = self._cliente.request(metodo, self._url + caminho, headers=self._cabecalhos(), **kwargs)
+        if resposta.status_code == 401 and not self._token:  # token vencido: renova e tenta de novo
+            esquecer_token(self._info, ESCOPO)
+            resposta = self._cliente.request(metodo, self._url + caminho, headers=self._cabecalhos(), **kwargs)
+        verificar(resposta, DICAS)
+        return resposta
 
     def _get(self, caminho: str, **params) -> dict:
-        resposta = self._cliente.get(self._url + caminho, headers=self._cabecalhos(), params=params)
-        verificar(resposta, DICAS)
-        return resposta.json()
+        return self._pedir("GET", caminho, params=params).json()
 
     def _post(self, caminho: str, corpo: dict, **params) -> dict:
-        resposta = self._cliente.post(self._url + caminho, headers=self._cabecalhos(), json=corpo, params=params)
-        verificar(resposta, DICAS)
-        return resposta.json()
+        return self._pedir("POST", caminho, json=corpo, params=params).json()
 
     @property
     def email_robo(self) -> str:

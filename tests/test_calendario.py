@@ -95,3 +95,45 @@ def test_testar_e_erro_403():
         assert "Fazer alterações nos eventos" in str(erro)
     else:
         raise AssertionError("deveria ter falhado")
+
+
+def test_token_vencido_e_renovado_sozinho(monkeypatch):
+    """O Google responde 401 quando o token expira (1 hora); o Venire renova e tenta de novo."""
+    from venire.servicos import google as modulo_google
+
+    tokens = iter(["token-velho", "token-novo"])
+    logins = []
+
+    def login_falso(info, escopos):
+        chave = (info.get("client_email"), tuple(escopos))
+        if chave not in modulo_google._tokens:
+            logins.append(1)
+            modulo_google._tokens[chave] = (next(tokens), float("inf"))
+        return modulo_google._tokens[chave][0]
+
+    monkeypatch.setattr("venire.servicos.calendario.token", login_falso)
+    monkeypatch.setattr(modulo_google, "_tokens", {})
+
+    def google(request):
+        if request.headers["Authorization"] != "Bearer token-novo":
+            return httpx.Response(401, json={"error": {"message": "Request had invalid authentication credentials."}})
+        return httpx.Response(200, json={"summary": "Lucas V.G"})
+
+    calendario = Calendario(CONTA, "lucas@gmail.com", cliente=httpx.Client(transport=httpx.MockTransport(google)))
+    assert calendario.testar() == "Lucas V.G"
+    assert len(logins) == 2
+
+
+def test_token_guardado_vale_por_45_minutos(monkeypatch):
+    from venire.servicos import google as modulo_google
+
+    relogio = [1000.0]
+    monkeypatch.setattr(modulo_google.time, "monotonic", lambda: relogio[0])
+    monkeypatch.setattr(modulo_google, "_tokens", {("robo@x", ("e",)): ("antigo", 1000.0 + 45 * 60)})
+    info = {"client_email": "robo@x"}
+    assert modulo_google.token(info, ["e"]) == "antigo"
+    relogio[0] += 46 * 60
+    chamado = []
+    monkeypatch.setattr("google.oauth2.service_account.Credentials.from_service_account_info",
+                        lambda i, scopes: type("C", (), {"token": "novo", "refresh": lambda self, r: chamado.append(1)})())
+    assert modulo_google.token(info, ["e"]) == "novo" and chamado == [1]

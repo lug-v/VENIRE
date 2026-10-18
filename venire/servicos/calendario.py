@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from venire.config import FUSO
-from venire.servicos.google import ler_conta_servico, token, verificar
+from venire.servicos.google import esquecer_token, ler_conta_servico, token, verificar
 
 API = "https://www.googleapis.com/calendar/v3/calendars/{id}"
 ESCOPO = ["https://www.googleapis.com/auth/calendar"]
@@ -35,12 +35,17 @@ class Calendario:
         self._fuso = ZoneInfo(FUSO)
 
     def _cabecalhos(self) -> dict:
-        if self._token is None:
-            self._token = token(self._info, ESCOPO)
-        return {"Authorization": f"Bearer {self._token}"}
+        return {"Authorization": f"Bearer {self._token or token(self._info, ESCOPO)}"}
+
+    def _enviar(self, metodo: str, caminho: str, **kwargs) -> httpx.Response:
+        resposta = self._cliente.request(metodo, self._url + caminho, headers=self._cabecalhos(), **kwargs)
+        if resposta.status_code == 401 and not self._token:  # token vencido: renova e tenta de novo
+            esquecer_token(self._info, ESCOPO)
+            resposta = self._cliente.request(metodo, self._url + caminho, headers=self._cabecalhos(), **kwargs)
+        return resposta
 
     def _pedir(self, metodo: str, caminho: str, **kwargs) -> dict:
-        resposta = self._cliente.request(metodo, self._url + caminho, headers=self._cabecalhos(), **kwargs)
+        resposta = self._enviar(metodo, caminho, **kwargs)
         verificar(resposta, DICAS)
         return resposta.json() if resposta.content else {}
 
@@ -65,7 +70,7 @@ class Calendario:
         return self._pedir("POST", "/events", json=corpo).get("htmlLink", "")
 
     def apagar(self, evento_id: str) -> bool:
-        resposta = self._cliente.delete(f"{self._url}/events/{evento_id}", headers=self._cabecalhos())
+        resposta = self._enviar("DELETE", f"/events/{evento_id}")
         if resposta.status_code in (404, 410):
             return False  # já tinha sido apagado (por exemplo, pelo celular)
         verificar(resposta, DICAS)

@@ -30,7 +30,7 @@ class Groq:
         if resposta.status_code != 200:
             raise ErroIA(f"Groq respondeu {resposta.status_code}: {resposta.text[:300]}")
 
-    def _chat_json(self, mensagens: list[dict], max_tokens: int = 800) -> dict:
+    def _chat_json(self, mensagens: list[dict], max_tokens: int = 4000) -> dict:
         resposta = self._cliente.post(URL_CHAT, headers=self._autorizacao, json={
             "model": self._modelo,
             "response_format": {"type": "json_object"},
@@ -62,7 +62,7 @@ class Groq:
                 {"type": "text", "text": texto},
                 {"type": "image_url", "image_url": {"url": endereco}},
             ]},
-        ], max_tokens=1500)
+        ], max_tokens=4000)
 
     def transcrever(self, audio: bytes, nome_arquivo: str = "audio.ogg") -> str:
         """Transforma o áudio em texto com o Whisper (em português)."""
