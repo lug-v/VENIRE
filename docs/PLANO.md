@@ -193,4 +193,8 @@ Considerando hoje = terça, 13/10/2026:
   - Variáveis novas: `DATABASE_URL` (conexão Neon com prefixo `DATABASE`, sem branch por deploy), `GROQ_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_SHEET_ID` (aceita o link inteiro da planilha).
   - Rota útil: `/planilha/diagnostico?chave=...`.
   - Lições: ao colar o JSON do robô, a última `}` costuma ficar de fora (o código agora completa); trocar o `VENIRE_SECRET` exige abrir de novo o link de configurar.
-- **Próxima:** fase 3 — agenda no Google Agenda, dias da semana e conflitos.
+- **Fase 3 — concluída (18/10/2026):** compromissos direto no Google Agenda, com dias da semana, "semana que vem", "mês que vem", dia inteiro quando não há horário e 1 hora quando não há fim; pergunta com botões quando hoje é o dia citado; aviso de conflito com "Agendar mesmo assim"; Desfazer; `/agenda` (hoje e amanhã).
+  - Variável nova: `GOOGLE_CALENDAR_ID` (o Gmail). Rota útil: `/agenda/diagnostico?chave=...`.
+  - Decisões: uma única chamada à IA classifica (gasto, evento ou outro) e só copia as expressões de data e hora; o Python calcula. O Google Agenda é a fonte oficial (sem tabela espelho); pedidos que esperam clique ficam na tabela `pendencias`.
+  - Lição: depois de cadastrar uma variável, só o Redeploy faz a versão no ar enxergá-la.
+- **Próxima:** fase 4 — áudio e foto (Whisper para áudio; leitura de nota fiscal por foto).
