@@ -7,10 +7,11 @@ import os
 import psycopg
 import pytest
 
-from venire import pendencias
+from tests.banco_teste import recriar_tabelas
+
 from venire.datas import data_do_evento, hora_do_evento
 from venire.nucleo.respostas import Dependencias, processar_botao, processar_texto
-from venire.servicos import eventos, gastos
+from venire.servicos import eventos
 
 HOJE = date(2026, 10, 13)  # terça
 AGORA = time(10, 0)
@@ -133,11 +134,7 @@ class CalendarioFalso:
 def deps():
     if not URL_TESTE:
         pytest.skip("TEST_DATABASE_URL não configurada")
-    with psycopg.connect(URL_TESTE, autocommit=True) as conexao:
-        conexao.execute("DROP TABLE IF EXISTS pendencias")
-        pendencias.criar_tabela(conexao)
-        conexao.execute("DROP TABLE IF EXISTS expenses")
-        gastos.criar_tabela(conexao)
+    recriar_tabelas(URL_TESTE)
 
     @contextmanager
     def banco():

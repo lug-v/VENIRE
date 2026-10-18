@@ -10,7 +10,8 @@ import httpx
 import psycopg
 import pytest
 
-from venire import envios, pendencias
+from tests.banco_teste import recriar_tabelas
+
 from venire.nucleo import automacoes
 from venire.nucleo.interpretador import INSTRUCOES, INSTRUCOES_FOTO
 from venire.nucleo.respostas import Dependencias, processar_botao, processar_foto, processar_texto
@@ -123,11 +124,7 @@ class PlanilhaFalsa:
 def deps():
     if not URL_TESTE:
         pytest.skip("TEST_DATABASE_URL não configurada")
-    with psycopg.connect(URL_TESTE, autocommit=True) as conexao:
-        for tabela, modulo in (("expenses", gastos), ("incomes", receitas),
-                               ("pendencias", pendencias), ("envios", envios)):
-            conexao.execute(f"DROP TABLE IF EXISTS {tabela}")
-            modulo.criar_tabela(conexao)
+    recriar_tabelas(URL_TESTE)
 
     @contextmanager
     def banco():

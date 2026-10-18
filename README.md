@@ -14,7 +14,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [ ] Fase 5 — Corrigir, cancelar e perguntar
 - [x] Fase 6 — Aviso 1 hora antes, resumo das 6h30, da noite e semanal
 - [x] Fase 7 — Receitas e saldo do mês (com projeção do fechamento)
-- [ ] Fase 8 — Rotina e contas: recorrentes, contas fixas e tarefas
+- [x] Fase 8 — Rotina e contas: recorrentes, contas fixas e tarefas
 - [ ] Fase 9 — Orçamentos e alertas
 - [ ] Fase 10 — Painel web e integração com o clari-analytics
 
@@ -30,6 +30,7 @@ venire/
 │   ├── canais/telegram.py    # fala com a API do Telegram
 │   ├── ia/groq.py            # chamada à IA, sempre devolvendo JSON
 │   ├── pendencias.py         # pedidos que esperam um clique (conflito, escolher o dia)
+│   ├── repeticao.py          # "toda terça e quinta", "todo dia 10" → regra do Google Agenda
 │   ├── nucleo/
 │   │   ├── interpretador.py  # uma chamada à IA: gasto, evento ou outro + campos extraídos
 │   │   └── respostas.py      # decide o que fazer com cada mensagem (não depende do Telegram)
@@ -38,6 +39,8 @@ venire/
 │       ├── gastos.py         # interpretar, salvar, desfazer e resumir gastos
 │       ├── receitas.py       # interpretar, salvar e desfazer receitas (tabela incomes)
 │       ├── financas.py       # saldo do mês, projeção do fechamento e fechamento mensal
+│       ├── contas.py         # contas fixas, vencimentos e "já paguei"
+│       ├── tarefas.py        # tarefas sem horário
 │       ├── planilha.py       # cópia na Google Planilha (aba de gastos + aba Receitas)
 │       ├── eventos.py        # monta o compromisso e formata as respostas
 │       └── calendario.py     # Google Agenda: criar, apagar, listar e conflitos
@@ -129,6 +132,13 @@ Variáveis opcionais: `CIDADE`, `LATITUDE` e `LONGITUDE` (padrão: Bento Gonçal
 - O resumo das 6h30 traz o mesmo bloco de saldo.
 - No dia 1, chega o **fechamento do mês anterior**: quanto sobrou ou faltou, a comparação com o mês anterior e, se faltou, as categorias que mais pesaram.
 - Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para o `/saldo` aparecer no menu.
+
+## Rotina e contas (fase 8)
+
+- **Compromissos que se repetem:** “toda terça e quinta Muay Thai às 19h”, “inglês todo dia 10 às 20h”, “academia de segunda a sexta às 7h”, “reunião a cada 2 semanas na quarta”. Vira uma série no Google Agenda; o ↩️ Desfazer apaga a série inteira, e o aviso de 1 hora antes vale para cada ocorrência.
+- **Contas fixas:** “aluguel 1450 todo dia 5”, “luz vence dia 10” (sem valor = valor variável). O resumo das 6h30 mostra as contas que vencem nos próximos 3 dias e as atrasadas; no dia do vencimento chega uma mensagem com o botão **✅ Já paguei**, que registra o gasto. Mandar “paguei o aluguel 1450” também marca a conta como paga. `/contas` mostra o mês, com botões.
+- **Tarefas:** “lembrar de comprar ração”, “anota: ligar pro contador”. Aparecem no resumo da manhã até você tocar nelas em `/tarefas`.
+- Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para /contas e /tarefas entrarem no menu.
 
 ## Rodar no seu computador
 

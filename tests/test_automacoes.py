@@ -9,13 +9,14 @@ from zoneinfo import ZoneInfo
 import httpx
 import psycopg
 import pytest
+
+from tests.banco_teste import recriar_tabelas
 from fastapi.testclient import TestClient
 
 from api import index
-from venire import envios, pendencias
 from venire.nucleo import automacoes
 from venire.nucleo.respostas import Dependencias, processar_texto
-from venire.servicos import gastos, receitas
+from venire.servicos import gastos
 from venire.servicos.cambio import Cambio
 from venire.servicos.clima import Clima, PrevisaoDia
 
@@ -131,10 +132,7 @@ class CalendarioFalso:
 def deps():
     if not URL_TESTE:
         pytest.skip("TEST_DATABASE_URL não configurada")
-    with psycopg.connect(URL_TESTE, autocommit=True) as conexao:
-        for tabela, modulo in (("expenses", gastos), ("pendencias", pendencias), ("envios", envios), ("incomes", receitas)):
-            conexao.execute(f"DROP TABLE IF EXISTS {tabela}")
-            modulo.criar_tabela(conexao)
+    recriar_tabelas(URL_TESTE)
 
     @contextmanager
     def banco():
@@ -222,4 +220,4 @@ def test_rotas_cron_exigem_chave(monkeypatch):
     assert cliente.get("/cron/noite?chave=senha").json() == {"ok": True, "enviados": 1}
     assert cliente.get("/cron/noite", headers={"Authorization": "Bearer senha"}).status_code == 200
     assert len(chamadas) == 2
-    assert json.loads(json.dumps(cliente.get("/").json()))["fase"] == 7
+    assert json.loads(json.dumps(cliente.get("/").json()))["fase"] == 8

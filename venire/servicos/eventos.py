@@ -5,6 +5,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from venire import repeticao as rep
 from venire.datas import data_do_evento, descrever, hora_do_evento
 
 DURACAO_PADRAO = 60  # minutos, quando não há horário final
@@ -20,6 +21,8 @@ class Evento(BaseModel):
     local: str = ""
     texto_original: str = ""
     nota: str = ""
+    repeticao: str = ""            # regra RRULE, ex.: "FREQ=WEEKLY;BYDAY=TU,TH"
+    repeticao_texto: str = ""      # ex.: "toda terça e quinta"
 
     @property
     def dia_inteiro(self) -> bool:
@@ -61,6 +64,13 @@ def de_dados(dados: dict, texto: str, referencia: date, hora_atual: time | None 
             data_escolhida = referencia + timedelta(days=1)
             nota = "esse horário já passou hoje, então marquei para amanhã"
 
+    regra = rep.interpretar(str(dados.get("repeticao_texto") or ""), referencia)
+    if regra:
+        # a data vira a primeira ocorrência da regra a partir do dia pedido (ou de hoje)
+        data_escolhida = regra.primeira_data(resultado_data.opcoes[0], inicio,
+                                             hora_atual if resultado_data.opcoes[0] == referencia else None)
+        nota = ""
+
     evento = Evento(
         titulo=titulo_bonito(dados.get("titulo")),
         data=data_escolhida,
@@ -69,8 +79,10 @@ def de_dados(dados: dict, texto: str, referencia: date, hora_atual: time | None 
         local=str(dados.get("local") or "")[:200],
         texto_original=texto[:500],
         nota=nota,
+        repeticao=regra.regra if regra else "",
+        repeticao_texto=regra.descricao if regra else "",
     )
-    if len(resultado_data.opcoes) > 1:
+    if len(resultado_data.opcoes) > 1 and not regra:
         return Interpretacao(evento=evento, opcoes_de_data=resultado_data.opcoes)
     return Interpretacao(evento=evento)
 
@@ -83,7 +95,12 @@ def quando(evento: Evento) -> str:
 
 
 def confirmacao(evento: Evento) -> str:
-    linhas = [f"📅 Agendado: {evento.titulo}", f"🗓️ {quando(evento)}"]
+    if evento.repeticao:
+        horario = "dia inteiro" if evento.dia_inteiro else f"{evento.inicio:%H:%M}–{evento.fim:%H:%M}"
+        linhas = [f"🔁 Agendado: {evento.titulo}", f"🗓️ {evento.repeticao_texto[:1].upper()}{evento.repeticao_texto[1:]} · {horario}",
+                  f"▶️ Começa {descrever(evento.data)}"]
+    else:
+        linhas = [f"📅 Agendado: {evento.titulo}", f"🗓️ {quando(evento)}"]
     if evento.local:
         linhas.append(f"📍 {evento.local}")
     if evento.nota:

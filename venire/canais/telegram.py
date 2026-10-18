@@ -12,10 +12,15 @@ class ErroTelegram(Exception):
 
 
 def teclado(botoes: list[tuple[str, str]]) -> dict | None:
-    """Transforma [(rótulo, dado)] em botões do Telegram, todos na mesma linha."""
+    """Transforma [(rótulo, dado)] em botões do Telegram.
+
+    Até 2 botões ficam na mesma linha; listas maiores (tarefas, contas) ficam um por linha.
+    """
     if not botoes:
         return None
-    return {"inline_keyboard": [[{"text": rotulo, "callback_data": dado} for rotulo, dado in botoes]]}
+    if len(botoes) <= 2:
+        return {"inline_keyboard": [[{"text": rotulo, "callback_data": dado} for rotulo, dado in botoes]]}
+    return {"inline_keyboard": [[{"text": rotulo, "callback_data": dado}] for rotulo, dado in botoes]}
 
 
 class Telegram:
@@ -79,6 +84,8 @@ class Telegram:
             {"command": "agenda", "description": "Compromissos de hoje e amanhã"},
             {"command": "saldo", "description": "Entradas, saídas, saldo e projeção do mês"},
             {"command": "gastos", "description": "Resumo dos gastos do mês"},
+            {"command": "contas", "description": "Contas fixas do mês e o que falta pagar"},
+            {"command": "tarefas", "description": "Tarefas abertas"},
             {"command": "semana", "description": "Resumo dos gastos da semana"},
             {"command": "ajuda", "description": "Ver o que o Venire sabe fazer"},
         ])

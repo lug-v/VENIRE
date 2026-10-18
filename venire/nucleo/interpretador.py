@@ -11,7 +11,12 @@ Classifique a mensagem e extraia os campos. Responda APENAS um JSON.
 
 "tipo": "gasto" (registra um gasto já feito), "receita" (registra um dinheiro que ENTROU: "ganhei",
 "recebi", "caiu o salário", "comissão de 800", "me pagaram"), "evento" (pede para agendar/marcar um
-compromisso) ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
+compromisso, inclusive os que se repetem: "toda terça e quinta Muay Thai às 19h"), "conta" (cadastra uma
+CONTA FIXA que vence todo mês: "aluguel 1450 todo dia 5", "conta de luz vence dia 10", "internet 99,90 todo
+mês dia 15"), "tarefa" (algo a fazer SEM data nem hora: "lembrar de comprar ração", "anota: ligar pro
+contador", "preciso renovar a CNH") ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
+"paguei o aluguel 1450" é gasto (já pagou), não conta. "me lembra de ligar pro João amanhã às 9" é evento
+(tem data/hora), não tarefa.
 
 Se tipo = "gasto":
 - "valor": número em reais (ex.: 15, 249.9). Aceite "15 reais", "R$ 15", "15,50", "1.200". Nunca invente.
@@ -41,6 +46,20 @@ Se tipo = "evento":
 - "hora_fim_texto": a hora de término, se dita; senão "".
 - "duracao_minutos": a duração, se dita ("por 2 horas" = 120); senão null.
 - "local": o lugar, se dito; senão "".
+- "repeticao_texto": se o compromisso se repete, a expressão EXATAMENTE como foi dita ("toda terça e
+  quinta", "todo dia 10", "todos os dias", "de segunda a sexta", "toda semana", "a cada 15 dias");
+  senão "". Quando houver repetição, "data_texto" só recebe a data de início se ela for dita
+  ("a partir de novembro", "começando dia 3"); os dias da semana da repetição NÃO vão em "data_texto".
+
+Se tipo = "conta":
+- "nome": a conta em poucas palavras, sem valor nem data (ex.: "aluguel", "luz", "internet", "faculdade").
+- "valor": número em reais, se dito; senão null (contas de valor variável, como luz).
+- "dia_vencimento": o dia do mês do vencimento, como número (1 a 31).
+- "categoria": exatamente uma das categorias de gasto acima (aluguel, condomínio, luz e água = Moradia;
+  faculdade e curso = Educação; internet, celular, streaming e academia = Assinaturas).
+
+Se tipo = "tarefa":
+- "texto": o que precisa ser feito, curto, começando por verbo ("comprar ração", "ligar pro contador").
 
 NUNCA calcule datas nem converta horas: copie as expressões como o usuário escreveu.
 "confianca": de 0 a 1."""

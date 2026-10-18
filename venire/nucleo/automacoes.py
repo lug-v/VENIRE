@@ -11,7 +11,7 @@ from typing import Callable
 
 from venire import envios
 from venire.datas import descrever, inicio_da_semana
-from venire.servicos import eventos, financas, gastos
+from venire.servicos import contas, eventos, financas, gastos, tarefas
 
 log = logging.getLogger("venire")
 
@@ -86,13 +86,15 @@ def resumo_do_dia(deps, dia: date, titulo: str, com_dolar_e_gastos: bool) -> str
                 linhas += [""] + alertas
 
     if com_dolar_e_gastos:
-        try:
-            with deps.banco() as conexao:
-                bloco = financas.bloco_do_mes(conexao, dia)
-            if bloco:
-                linhas += ["", bloco]
-        except Exception:
-            log.exception("Falha ao montar o saldo do mês")
+        for nome, montar in (("tarefas", tarefas.bloco_resumo), ("contas", contas.bloco_resumo),
+                             ("saldo do mês", financas.bloco_do_mes)):
+            try:
+                with deps.banco() as conexao:
+                    bloco = montar(conexao, dia)
+                if bloco:
+                    linhas += ["", bloco]
+            except Exception:
+                log.exception("Falha ao montar o bloco de %s", nome)
 
     return "\n".join(linhas).strip()
 
@@ -115,12 +117,13 @@ def resumo_semana_passada(deps, hoje: date) -> str:
 
 # ---------------------------------------------------------------- Execuções agendadas
 
-def _enviar_uma_vez(deps, chave: str, texto: str, enviar: Callable[[str], None]) -> bool:
+def _enviar_uma_vez(deps, chave: str, texto: str, enviar: Callable[..., None],
+                    botoes: list[tuple[str, str]] | None = None) -> bool:
     with deps.banco() as conexao:
         if not envios.reservar(conexao, chave):
             return False
     try:
-        enviar(texto)
+        enviar(texto, botoes) if botoes else enviar(texto)
     except Exception:
         with deps.banco() as conexao:
             envios.liberar(conexao, chave)  # tenta de novo na próxima chamada
@@ -141,7 +144,17 @@ def executar_manha(deps, enviar: Callable[[str], None]) -> dict:
             texto_fechamento = financas.fechamento(conexao, mes_passado)
         if texto_fechamento:
             enviados += _enviar_uma_vez(deps, f"fechamento:{mes_passado:%Y-%m}", texto_fechamento, enviar)
+    for texto_conta, botoes, chave in lembretes_de_contas(deps, hoje):
+        enviados += _enviar_uma_vez(deps, chave, texto_conta, enviar, botoes)
     return {"enviados": enviados}
+
+
+def lembretes_de_contas(deps, hoje: date) -> list[tuple[str, list[tuple[str, str]], str]]:
+    """Uma mensagem com o botão "Já paguei" para cada conta que vence hoje."""
+    with deps.banco() as conexao:
+        vencendo = [(c, v) for c, v in contas.pendentes(conexao, hoje, dias=0) if v == hoje]
+    return [(f"📌 Hoje vence: {c.nome} · {c.valor_texto}",
+             [("✅ Já paguei", f"cp:{c.id}")], f"conta:{c.id}:{hoje}") for c, _ in vencendo]
 
 
 def executar_noite(deps, enviar: Callable[[str], None]) -> dict:

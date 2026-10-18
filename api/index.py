@@ -52,7 +52,7 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 7,
+        "fase": 8,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,
@@ -192,7 +192,7 @@ def _executar_cron(request: Request, chave: str, tarefa) -> dict:
     telegram = Telegram(config.telegram_token)
     try:
         return {"ok": True, **tarefa(montar_dependencias(config),
-                                     lambda texto: telegram.enviar(config.chat_id_autorizado, texto))}
+                                     lambda texto, botoes=None: telegram.enviar(config.chat_id_autorizado, texto, botoes))}
     except Exception as erro:
         log.exception("Erro na tarefa agendada")
         raise HTTPException(status_code=500, detail=f"Erro: {erro}") from erro

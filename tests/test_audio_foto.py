@@ -9,14 +9,14 @@ import os
 import httpx
 import psycopg
 import pytest
+
+from tests.banco_teste import recriar_tabelas
 from fastapi.testclient import TestClient
 
 from api import index
-from venire import pendencias
 from venire.config import carregar_config
 from venire.ia.groq import Groq
 from venire.nucleo.respostas import Dependencias, processar_audio, processar_foto
-from venire.servicos import gastos
 
 HOJE = date(2026, 10, 18)  # domingo
 URL_TESTE = os.getenv("TEST_DATABASE_URL", "")
@@ -85,11 +85,7 @@ class CalendarioFalso:
 def deps():
     if not URL_TESTE:
         pytest.skip("TEST_DATABASE_URL não configurada")
-    with psycopg.connect(URL_TESTE, autocommit=True) as conexao:
-        conexao.execute("DROP TABLE IF EXISTS expenses")
-        gastos.criar_tabela(conexao)
-        conexao.execute("DROP TABLE IF EXISTS pendencias")
-        pendencias.criar_tabela(conexao)
+    recriar_tabelas(URL_TESTE)
 
     @contextmanager
     def banco():

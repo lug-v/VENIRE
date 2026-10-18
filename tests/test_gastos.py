@@ -12,6 +12,8 @@ import os
 import psycopg
 import pytest
 
+from tests.banco_teste import recriar_tabelas
+
 from venire.nucleo.respostas import Dependencias, processar_botao, processar_texto
 from venire.servicos import gastos
 
@@ -97,9 +99,7 @@ def test_comandos_sem_banco():
 def deps():
     if not URL_TESTE:
         pytest.skip("TEST_DATABASE_URL não configurada")
-    with psycopg.connect(URL_TESTE, autocommit=True) as conexao:
-        conexao.execute("DROP TABLE IF EXISTS expenses")
-        gastos.criar_tabela(conexao)
+    recriar_tabelas(URL_TESTE)
 
     @contextmanager
     def banco():

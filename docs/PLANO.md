@@ -212,7 +212,7 @@ Considerando hoje = terça, 13/10/2026:
 | 5 | Corrigir, cancelar e perguntar | a fazer |
 | 6 | Avisos e resumos automáticos | ✅ concluída |
 | 7 | **Receitas e saldo do mês** (inclui a projeção do fim do mês) | ✅ concluída (18/10/2026) |
-| 8 | **Rotina e contas**: compromissos recorrentes, contas fixas com vencimento, lista de tarefas | a fazer |
+| 8 | **Rotina e contas**: compromissos recorrentes, contas fixas com vencimento, lista de tarefas | ✅ concluída (18/10/2026) |
 | 9 | Orçamentos por categoria e alertas de gasto fora do padrão (antiga fase 7) | a fazer |
 | 10 | **Painel web dos gastos** + integração com o clari-analytics (antiga fase 8) | a fazer |
 
@@ -225,10 +225,11 @@ Considerando hoje = terça, 13/10/2026:
 - Fechamento do mês: no dia 1º, às 6h30, "Outubro fechou: entrou R$ X, saiu R$ Y, sobrou R$ Z (Z% da renda)", com comparação com o mês anterior. Se ficou negativo, mostra as 3 categorias que mais pesaram.
 - Como ficou no código: `servicos/receitas.py` (modelo, tabela `incomes`, salvar/apagar/total) e `servicos/financas.py` (saldo, projeção, fechamento). A IA continua fazendo uma única chamada por mensagem, agora com quatro tipos: gasto, receita, evento ou outro. O fechamento usa a tabela `envios`, então chega uma vez só. A projeção considera as receitas do mês anterior quando o salário ainda não caiu.
 
-### Fase 8 — Rotina e contas
+### Fase 8 — Rotina e contas ✅
 - Compromissos recorrentes no Google Agenda: "toda terça e quinta Muay Thai às 19h".
 - Contas fixas: "aluguel 1.450 todo dia 5" registra o gasto no dia e avisa no resumo da manhã quando estiver para vencer.
 - Tarefas sem horário: "lembrar de comprar ração"; aparecem no resumo da manhã até serem marcadas como feitas.
+- Como ficou no código: `venire/repeticao.py` transforma a expressão dita ("toda terça e quinta", "todo dia 10", "dias úteis", "a cada 15 dias") numa regra RRULE do Google Agenda e calcula a primeira ocorrência; desfazer apaga a série inteira. `servicos/contas.py` (tabelas `contas` e `contas_pagas`) e `servicos/tarefas.py` (tabela `tarefas`). Comandos /contas e /tarefas com botões. No dia do vencimento chega "📌 Hoje vence" com o botão "✅ Já paguei", que registra o gasto; mandar "paguei o aluguel 1450" também marca a conta como paga, e desfazer o gasto desmarca. Uma conta cadastrada depois do vencimento do mês só começa a contar no mês seguinte.
 
 ### Fase 10 — Painel web
 - Página publicada na Vercel com gráficos de gastos e receitas por mês e categoria, saldo e projeção.

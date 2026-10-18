@@ -53,6 +53,8 @@ class Calendario:
 
     def criar(self, evento) -> str:
         corpo = {"id": evento.id, "summary": evento.titulo, **self._periodo(evento)}
+        if getattr(evento, "repeticao", ""):
+            corpo["recurrence"] = [f"RRULE:{evento.repeticao}"]
         if evento.local:
             corpo["location"] = evento.local
         if evento.texto_original:

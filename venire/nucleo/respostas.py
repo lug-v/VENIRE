@@ -16,7 +16,7 @@ from venire.config import FUSO
 from venire.datas import descrever, hoje, hora_atual
 from venire.nucleo import automacoes
 from venire.nucleo.interpretador import interpretar, interpretar_foto
-from venire.servicos import eventos, financas, gastos, receitas
+from venire.servicos import contas, eventos, financas, gastos, receitas, tarefas
 from venire.servicos.eventos import Evento
 
 log = logging.getLogger("venire")
@@ -38,9 +38,14 @@ AJUDA = (
     "• ganhei 50 reais\n"
     "• comissão de 800\n"
     "Saldo do mês: /saldo\n\n"
+    "🔁 Rotina e contas\n"
+    "• toda terça e quinta Muay Thai às 19h\n"
+    "• aluguel 1450 todo dia 5 (conta fixa)\n"
+    "• lembrar de comprar ração (tarefa)\n"
+    "Veja com /contas e /tarefas\n\n"
     "🎙️ Áudio: fale do mesmo jeito que escreveria.\n"
     "📸 Foto: mande a nota fiscal, o comprovante do Pix ou um convite.\n\n"
-    "⏰ Automático: aviso 1 hora antes de cada compromisso, resumo às 6h30 (clima, dólar, agenda e gastos), "
+    "⏰ Automático: aviso 1 hora antes de cada compromisso, resumo às 6h30 (clima, dólar, agenda, contas, tarefas e saldo), "
     "resumo da semana às segundas e a agenda de amanhã às 21h."
 )
 
@@ -85,6 +90,10 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
             return Resposta(gastos.resumo_semana(conexao, deps.hoje()))
     if comando == "/agenda":
         return mostrar_agenda(deps)
+    if comando == "/contas":
+        return mostrar_contas(deps)
+    if comando == "/tarefas":
+        return mostrar_tarefas(deps)
     if comando == "/hoje":
         dia = deps.hoje()
         return Resposta(automacoes.resumo_do_dia(deps, dia, automacoes.titulo_manha(dia), com_dolar_e_gastos=True))
@@ -104,10 +113,14 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
         return registrar_receita(dados, texto, deps, origem)
     if tipo == "evento":
         return agendar_pedido(dados, texto, deps)
+    if tipo == "conta":
+        return cadastrar_conta(dados, deps)
+    if tipo == "tarefa":
+        return anotar_tarefa(dados, texto, deps)
     saudacao = f", {nome}" if nome else ""
     return Resposta(
         f"Ainda não sei fazer isso{saudacao}. 🙂\n"
-        "Eu registro gastos (“gastei 40 no mercado”) e agendo compromissos (“reunião quinta às 9”). "
+        "Eu registro gastos e receitas, agendo compromissos, cadastro contas fixas e anoto tarefas. "
         "Perguntas livres chegam numa próxima fase. Use /ajuda para ver exemplos."
     )
 
@@ -156,8 +169,13 @@ def registrar_gasto(dados: dict, texto: str, deps: Dependencias, origem: str = "
     gasto.origem = origem
     with deps.banco() as conexao:
         gastos.salvar(conexao, gasto)
+        conta = contas.conta_do_texto(conexao, texto, gasto.data)
+        if conta:
+            contas.marcar_paga(conexao, conta.id, gasto.data, gasto.id)
 
     texto_resposta = gastos.confirmacao(gasto)
+    if conta:
+        texto_resposta += f"\n📌 Conta “{conta.nome}” de {contas.MESES[gasto.data.month - 1]} marcada como paga."
     if deps.planilha:
         try:
             deps.planilha().adicionar(gasto)
@@ -186,6 +204,58 @@ def registrar_receita(dados: dict, texto: str, deps: Dependencias, origem: str =
             log.exception("Falha ao copiar a receita para a planilha")
             texto_resposta += f"\n\n⚠️ Salvei no banco, mas não consegui copiar para a planilha.\nMotivo: {erro}"
     return Resposta(texto_resposta, [("↩️ Desfazer", f"dr:{receita.id}")])
+
+
+def cadastrar_conta(dados: dict, deps: Dependencias) -> Resposta:
+    conta = contas.de_dados(dados)
+    if conta is None:
+        return Resposta("📌 Para cadastrar uma conta fixa, diga o nome e o dia do vencimento, "
+                        "como “aluguel 1450 todo dia 5” ou “luz vence dia 10”.")
+    with deps.banco() as conexao:
+        contas.salvar(conexao, conta, deps.hoje())
+    return Resposta(contas.confirmacao(conta, deps.hoje()), [("↩️ Desfazer", f"cx:{conta.id}")])
+
+
+def mostrar_contas(deps: Dependencias) -> Resposta:
+    with deps.banco() as conexao:
+        texto, abertas = contas.lista_do_mes(conexao, deps.hoje())
+    return Resposta(texto, [(f"✅ Paguei {c.nome}", f"cp:{c.id}") for c in abertas])
+
+
+def pagar_conta(conta_id: str, deps: Dependencias) -> Resposta:
+    """Botão "Paguei": marca a conta do mês e registra o gasto com o valor cadastrado."""
+    hoje = deps.hoje()
+    with deps.banco() as conexao:
+        conta = contas.buscar(conexao, conta_id)
+        if conta is None:
+            return Resposta("Essa conta não existe mais.")
+        if conta.id in contas.pagas_no_mes(conexao, hoje):
+            return Resposta(f"✅ {conta.nome} já está paga neste mês.")
+        if conta.valor is None:
+            contas.marcar_paga(conexao, conta.id, hoje)
+            return Resposta(f"✅ {conta.nome} marcada como paga.\n"
+                            f"Como o valor varia, registre o gasto: “paguei {conta.nome.lower()} 180”.")
+    resposta = registrar_gasto({"valor": str(conta.valor), "descricao": conta.nome.lower(),
+                                "categoria": conta.categoria}, f"Conta fixa: {conta.nome}", deps, origem="conta")
+    return resposta
+
+
+def anotar_tarefa(dados: dict, texto: str, deps: Dependencias) -> Resposta:
+    descricao = str(dados.get("texto") or texto).strip()
+    with deps.banco() as conexao:
+        tarefa_id = tarefas.salvar(conexao, descricao, deps.hoje())
+        total = len(tarefas.abertas(conexao))
+    plural = "tarefa aberta" if total == 1 else "tarefas abertas"
+    return Resposta(f"📝 Anotado: {tarefas.titulo(descricao)}\nVocê tem {total} {plural}. Veja com /tarefas.",
+                    [("↩️ Desfazer", f"tx:{tarefa_id}")])
+
+
+def mostrar_tarefas(deps: Dependencias, aviso: str = "") -> Resposta:
+    with deps.banco() as conexao:
+        texto, abertas = tarefas.lista(conexao, deps.hoje())
+    if aviso:
+        texto = f"{aviso}\n\n{texto}"
+    return Resposta(texto, [(f"✅ {t[:40]}", f"tf:{i}") for i, t in abertas])
 
 
 def agendar_pedido(dados: dict, texto: str, deps: Dependencias) -> Resposta:
@@ -255,6 +325,24 @@ def processar_botao(dado: str, deps: Dependencias) -> Resposta:
     if acao == "desfazer" and resto:
         return desfazer_gasto(resto, deps)
 
+    if acao == "cp" and resto:
+        return pagar_conta(resto, deps)
+
+    if acao == "cx" and resto:
+        with deps.banco() as conexao:
+            nome = contas.apagar(conexao, resto)
+        return Resposta(f"↩️ Conta fixa “{nome}” removida." if nome else "Essa conta já tinha sido removida.")
+
+    if acao == "tf" and resto:
+        with deps.banco() as conexao:
+            feita = tarefas.concluir(conexao, resto, deps.hoje())
+        return mostrar_tarefas(deps, f"✅ Feito: {feita}" if feita else "")
+
+    if acao == "tx" and resto:
+        with deps.banco() as conexao:
+            apagada = tarefas.apagar(conexao, resto)
+        return Resposta("↩️ Tarefa removida." if apagada else "Essa tarefa já tinha sido removida.")
+
     if acao == "dr" and resto:
         with deps.banco() as conexao:
             apagada = receitas.apagar(conexao, resto)
@@ -297,6 +385,7 @@ def processar_botao(dado: str, deps: Dependencias) -> Resposta:
 
 def desfazer_gasto(gasto_id: str, deps: Dependencias) -> Resposta:
     with deps.banco() as conexao:
+        contas.desmarcar_pelo_gasto(conexao, gasto_id)
         apagado = gastos.apagar(conexao, gasto_id)
     if not apagado:
         return Resposta("Esse gasto já tinha sido removido.")
