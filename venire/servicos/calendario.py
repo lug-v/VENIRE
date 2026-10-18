@@ -57,8 +57,11 @@ class Calendario:
             corpo["recurrence"] = [f"RRULE:{evento.repeticao}"]
         if evento.local:
             corpo["location"] = evento.local
+        descricao = [getattr(evento, "detalhes", "")]
         if evento.texto_original:
-            corpo["description"] = f"Criado pelo Venire a partir de: “{evento.texto_original}”"
+            descricao.append(f"Criado pelo Venire a partir de: “{evento.texto_original}”")
+        if any(descricao):
+            corpo["description"] = "\n\n".join(d for d in descricao if d)
         return self._pedir("POST", "/events", json=corpo).get("htmlLink", "")
 
     def apagar(self, evento_id: str) -> bool:

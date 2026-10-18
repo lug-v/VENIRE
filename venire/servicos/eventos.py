@@ -21,6 +21,7 @@ class Evento(BaseModel):
     local: str = ""
     texto_original: str = ""
     nota: str = ""
+    detalhes: str = ""             # vai na descrição do Google (professor, observações...)
     repeticao: str = ""            # regra RRULE, ex.: "FREQ=WEEKLY;BYDAY=TU,TH"
     repeticao_texto: str = ""      # ex.: "toda terça e quinta"
 
@@ -78,6 +79,7 @@ def de_dados(dados: dict, texto: str, referencia: date, hora_atual: time | None 
         fim=fim,
         local=str(dados.get("local") or "")[:200],
         texto_original=texto[:500],
+        detalhes=str(dados.get("detalhes") or "")[:500],
         nota=nota,
         repeticao=regra.regra if regra else "",
         repeticao_texto=regra.descricao if regra else "",

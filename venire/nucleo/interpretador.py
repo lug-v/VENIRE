@@ -14,7 +14,8 @@ Classifique a mensagem e extraia os campos. Responda APENAS um JSON.
 compromisso, inclusive os que se repetem: "toda terça e quinta Muay Thai às 19h"), "conta" (cadastra uma
 CONTA FIXA que vence todo mês: "aluguel 1450 todo dia 5", "conta de luz vence dia 10", "internet 99,90 todo
 mês dia 15"), "tarefa" (algo a fazer SEM data nem hora: "lembrar de comprar ração", "anota: ligar pro
-contador", "preciso renovar a CNH") ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
+contador", "preciso renovar a CNH"), "eventos" (a mensagem traz uma LISTA de dois ou mais compromissos
+com datas, como um cronograma de aulas ou uma agenda colada) ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
 "paguei o aluguel 1450" é gasto (já pagou), não conta. "me lembra de ligar pro João amanhã às 9" é evento
 (tem data/hora), não tarefa.
 
@@ -58,6 +59,14 @@ Se tipo = "conta":
 - "categoria": exatamente uma das categorias de gasto acima (aluguel, condomínio, luz e água = Moradia;
   faculdade e curso = Educação; internet, celular, streaming e academia = Assinaturas).
 
+Se tipo = "eventos":
+- "eventos": lista (no máximo 25) com TODOS os itens da lista, na ordem, inclusive os de datas passadas.
+  Cada item tem "titulo", "data_texto", "hora_texto", "hora_fim_texto", "local" e "detalhes", com as mesmas
+  regras de um evento. "titulo" junta o tipo e o assunto de forma curta (ex.: "Aula Live – Big Data
+  Analytics", "1ª chamada – Técnicas Não Supervisionadas"). "detalhes" guarda o resto útil em uma linha
+  (ex.: "Professor: Vinicius Aquino do Vale"); ignore campos vazios ou com "-". "data_texto" é a data como
+  está escrita ("19 de Outubro", "19/10"). Em "19:00 às 22:20", hora_texto = "19:00" e hora_fim_texto = "22:20".
+
 Se tipo = "tarefa":
 - "texto": o que precisa ser feito, curto, começando por verbo ("comprar ração", "ligar pro contador").
 
@@ -95,8 +104,9 @@ Se tipo = "receita":
   "categoria_receita": exatamente uma de: {", ".join(CATEGORIAS_RECEITA)}.
 
 Se tipo = "eventos":
-- "eventos": lista com no máximo 5 compromissos, cada um com "titulo", "data_texto" (como aparece:
-  "15/10", "sexta", "20 de novembro"), "hora_texto", "hora_fim_texto" e "local". Use "" quando faltar algo.
+- "eventos": lista com no máximo 25 compromissos, cada um com "titulo", "data_texto" (como aparece:
+  "15/10", "sexta", "20 de novembro"), "hora_texto", "hora_fim_texto", "local" e "detalhes" (outras
+  informações úteis, como professor ou observação). Use "" quando faltar algo.
 
 Use a legenda, se houver, como contexto. NUNCA invente valores, datas ou horários que não estejam visíveis."""
 

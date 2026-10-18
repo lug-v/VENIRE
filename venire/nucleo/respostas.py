@@ -13,7 +13,7 @@ from typing import Callable
 
 from venire import pendencias
 from venire.config import FUSO
-from venire.datas import descrever, hoje, hora_atual
+from venire.datas import data_ja_passou, descrever, hoje, hora_atual
 from venire.nucleo import automacoes
 from venire.nucleo.interpretador import interpretar, interpretar_foto
 from venire.servicos import contas, eventos, financas, gastos, receitas, tarefas
@@ -113,6 +113,12 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
         return registrar_receita(dados, texto, deps, origem)
     if tipo == "evento":
         return agendar_pedido(dados, texto, deps)
+    if tipo == "eventos":
+        lista = [e for e in (dados.get("eventos") or []) if isinstance(e, dict)]
+        if len(lista) == 1:
+            return agendar_pedido(lista[0], texto, deps)
+        if lista:
+            return agendar_lote(lista, texto, deps)
     if tipo == "conta":
         return cadastrar_conta(dados, deps)
     if tipo == "tarefa":
@@ -148,12 +154,13 @@ def processar_foto(imagem: bytes, tipo: str, legenda: str, deps: Dependencias) -
         resposta.texto = "📸 " + resposta.texto
         return [resposta]
     if dados.get("tipo") == "eventos":
-        lista = [e for e in (dados.get("eventos") or []) if isinstance(e, dict)][:5]
+        lista = [e for e in (dados.get("eventos") or []) if isinstance(e, dict)]
+        if len(lista) == 1:
+            return [agendar_pedido(lista[0], origem_texto, deps)]
         if lista:
-            respostas = [agendar_pedido(e, origem_texto, deps) for e in lista]
-            if len(lista) > 1:
-                respostas.insert(0, Resposta(f"📸 Encontrei {len(lista)} compromissos na foto:"))
-            return respostas
+            resposta = agendar_lote(lista, origem_texto, deps)
+            resposta.texto = "📸 " + resposta.texto
+            return [resposta]
     if legenda.strip():  # foto sem nota nem compromisso: a legenda vale como mensagem
         return [processar_texto(legenda, deps, origem="foto")]
     return [Resposta(
@@ -281,6 +288,71 @@ def agendar_pedido(dados: dict, texto: str, deps: Dependencias) -> Resposta:
     return agendar(evento, deps)
 
 
+LIMITE_LOTE = 25
+
+
+def agendar_lote(lista: list[dict], texto: str, deps: Dependencias) -> Resposta:
+    """Vários compromissos de uma vez (cronograma colado, foto de agenda).
+
+    Datas que já passaram são puladas; conflitos não travam o lote, só aparecem como aviso.
+    Uma única resposta, com um botão para desfazer tudo.
+    """
+    if not deps.calendario:
+        return Resposta("📅 A agenda ainda não está configurada: falta cadastrar o GOOGLE_CALENDAR_ID na Vercel.")
+    calendario = deps.calendario()
+    criados: list[Evento] = []
+    passados, problemas, conflitos, falhas = [], [], [], []
+
+    for item in lista[:LIMITE_LOTE]:
+        data_texto = str(item.get("data_texto") or "")
+        titulo = eventos.titulo_bonito(item.get("titulo"))
+        if data_ja_passou(data_texto, deps.hoje()):
+            passados.append(data_texto)
+            continue
+        resultado = eventos.de_dados(item, texto[:200], deps.hoje(), deps.hora_atual())
+        if resultado.problema or not resultado.evento:
+            problemas.append(f"{titulo} ({data_texto or 'sem data'})")
+            continue
+        evento = resultado.evento
+        evento.nota = ""
+        try:
+            choques = calendario.conflitos(evento)
+            calendario.criar(evento)
+        except Exception as erro:
+            log.exception("Falha ao agendar item do lote")
+            falhas.append(f"{titulo}: {erro}")
+            continue
+        criados.append(evento)
+        if choques:
+            conflitos.append(f"{evento.titulo} ({evento.data:%d/%m}) × {choques[0].get('summary', 'outro compromisso')}")
+
+    linhas = []
+    if criados:
+        plural = "compromisso" if len(criados) == 1 else "compromissos"
+        linhas.append(f"📅 Agendei {len(criados)} {plural}:")
+        linhas += [f"• {eventos.quando(e)} — {e.titulo}" for e in sorted(criados, key=lambda e: (e.data, e.inicio or datetime.min.time()))]
+    else:
+        linhas.append("📅 Não agendei nada.")
+    if passados:
+        linhas += ["", f"⏭️ Pulei {len(passados)} que já passaram ({passados[0]} a {passados[-1]})."
+                   if len(passados) > 1 else f"⏭️ Pulei 1 que já passou ({passados[0]})."]
+    if len(lista) > LIMITE_LOTE:
+        linhas += ["", f"✂️ A lista tinha {len(lista)} itens; agendei só os {LIMITE_LOTE} primeiros. Mande o resto em outra mensagem."]
+    if conflitos:
+        linhas += ["", "⚠️ Coincidem com outros compromissos:"] + [f"• {c}" for c in conflitos]
+    if problemas:
+        linhas += ["", "❓ Não entendi a data de:"] + [f"• {p}" for p in problemas]
+    if falhas:
+        linhas += ["", "😕 Falharam no Google Agenda:"] + [f"• {f}" for f in falhas[:3]]
+
+    botoes = []
+    if criados:
+        with deps.banco() as conexao:
+            pid = pendencias.guardar(conexao, "lote", {"ids": [e.id for e in criados]})
+        botoes = [("↩️ Desfazer tudo", f"dl:{pid}")]
+    return Resposta("\n".join(linhas), botoes)
+
+
 def agendar(evento: Evento, deps: Dependencias, forcar: bool = False) -> Resposta:
     calendario = deps.calendario()
     try:
@@ -363,6 +435,20 @@ def processar_botao(dado: str, deps: Dependencias) -> Resposta:
             log.exception("Falha ao desfazer o evento")
             return Resposta(f"😕 Não consegui remover do Google Agenda.\nMotivo: {erro}")
         return Resposta("↩️ Compromisso removido da agenda." if apagado else "Esse compromisso já tinha sido removido.")
+
+    if acao == "dl" and resto:
+        with deps.banco() as conexao:
+            pendencia = pendencias.retirar(conexao, resto)
+        if pendencia is None:
+            return Resposta("Esse lote já foi desfeito (ou o botão expirou: ele vale por 1 dia).")
+        calendario = deps.calendario()
+        removidos = 0
+        for evento_id in pendencia[1].get("ids", []):
+            try:
+                removidos += bool(calendario.apagar(evento_id))
+            except Exception:
+                log.exception("Falha ao remover item do lote")
+        return Resposta(f"↩️ Removi {removidos} compromissos da agenda.")
 
     if acao in ("forcar", "cancelar", "dia"):
         pid, _, indice = resto.partition(":")

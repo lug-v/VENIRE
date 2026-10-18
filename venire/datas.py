@@ -192,6 +192,26 @@ def data_do_evento(texto: str, referencia: date | None = None) -> DataEvento | N
     return None
 
 
+def data_ja_passou(texto: str, referencia: date | None = None) -> bool:
+    """True quando o texto traz dia e mês sem ano ("05 de outubro", "05/10") e essa data,
+    no ano atual, ficou para trás há menos de 6 meses. Usado em listas de compromissos,
+    para pular itens passados em vez de jogá-los para o ano que vem."""
+    ref = referencia or hoje()
+    t = normalizar(texto)
+    completa = re.search(r"(\d{1,2})/(\d{1,2})(?!/)", t)
+    por_extenso = re.search(r"(\d{1,2})\s*de\s*([a-z]+)", t)
+    if completa:
+        dia, mes = int(completa.group(1)), int(completa.group(2))
+    elif por_extenso and por_extenso.group(2) in MESES:
+        dia, mes = int(por_extenso.group(1)), MESES[por_extenso.group(2)]
+    else:
+        return False
+    if re.search(r"\b20\d{2}\b", t):
+        return False
+    data = _somar_meses(dia, ref.year, mes, 0)
+    return bool(data and data < ref and (ref - data).days <= 180)
+
+
 def hora_do_evento(texto: str) -> time | None:
     """Converte a hora falada em horário.
 

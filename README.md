@@ -133,6 +133,10 @@ Variáveis opcionais: `CIDADE`, `LATITUDE` e `LONGITUDE` (padrão: Bento Gonçal
 - No dia 1, chega o **fechamento do mês anterior**: quanto sobrou ou faltou, a comparação com o mês anterior e, se faltou, as categorias que mais pesaram.
 - Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para o `/saldo` aparecer no menu.
 
+## Lista de compromissos de uma vez
+
+Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto de uma agenda. O Venire agenda até 25 itens de uma vez, **pula as datas que já passaram**, coloca professor e observações na descrição do evento, avisa sobre conflitos sem travar o resto e responde numa única mensagem com o botão **↩️ Desfazer tudo** (válido por 1 dia).
+
 ## Rotina e contas (fase 8)
 
 - **Compromissos que se repetem:** “toda terça e quinta Muay Thai às 19h”, “inglês todo dia 10 às 20h”, “academia de segunda a sexta às 7h”, “reunião a cada 2 semanas na quarta”. Vira uma série no Google Agenda; o ↩️ Desfazer apaga a série inteira, e o aviso de 1 hora antes vale para cada ocorrência.

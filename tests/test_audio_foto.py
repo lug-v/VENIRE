@@ -145,10 +145,11 @@ def test_foto_de_convite_com_dois_compromissos(deps):
         {"titulo": "aniversário da Ana", "data_texto": "sábado", "hora_texto": "20h", "local": "Salão"},
         {"titulo": "ensaio", "data_texto": "24/10", "hora_texto": "14h"},
     ]})
-    respostas = processar_foto(b"jpg", "image/jpeg", "", deps)
-    assert respostas[0].texto == "📸 Encontrei 2 compromissos na foto:"
-    assert "sábado, 24/10 · 20:00–21:00" in respostas[1].texto and "Salão" in respostas[1].texto
-    assert "📅 Agendado: Ensaio" in respostas[2].texto
+    [resposta] = processar_foto(b"jpg", "image/jpeg", "", deps)
+    assert resposta.texto.startswith("📸 📅 Agendei 2 compromissos:")
+    assert "• sábado, 24/10 · 14:00–15:00 — Ensaio" in resposta.texto
+    assert "• sábado, 24/10 · 20:00–21:00 — Aniversário da Ana" in resposta.texto
+    assert resposta.botoes[0][0] == "↩️ Desfazer tudo"
     assert len(CalendarioFalso.eventos) == 2
 
 
