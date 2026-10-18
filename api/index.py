@@ -6,6 +6,9 @@ Rotas:
   GET  /telegram/diagnostico  → mostra erros do webhook (protegido por senha)
   GET  /planilha/diagnostico  → testa o acesso à Google Planilha (protegido por senha)
   GET  /agenda/diagnostico    → testa o acesso ao Google Agenda (protegido por senha)
+  GET  /cron/lembretes        → aviso 1 hora antes (chamar a cada 5 minutos)
+  GET  /cron/manha            → resumo das 6h30 (e da semana, às segundas)
+  GET  /cron/noite            → compromissos de amanhã (21h)
   POST /webhook               → recebe as mensagens e os cliques nos botões
 """
 
@@ -27,7 +30,10 @@ from venire.ia.groq import Groq  # noqa: E402
 from venire.nucleo.respostas import (  # noqa: E402
     Dependencias, Resposta, processar_audio, processar_botao, processar_foto, processar_texto,
 )
+from venire.nucleo import automacoes  # noqa: E402
 from venire.servicos.calendario import Calendario  # noqa: E402
+from venire.servicos.cambio import Cambio  # noqa: E402
+from venire.servicos.clima import Clima  # noqa: E402
 from venire.servicos.planilha import Planilha  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -46,7 +52,7 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 4,
+        "fase": 6,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,
@@ -141,6 +147,9 @@ def montar_dependencias(config: Config) -> Dependencias:
         if tem_planilha else None,
         calendario=(lambda: Calendario(config.google_conta_servico_json, config.google_agenda_id))
         if tem_agenda else None,
+        clima=lambda: Clima(config.latitude, config.longitude),
+        cambio=lambda: Cambio(),
+        cidade=config.cidade,
     )
 
 
@@ -170,6 +179,38 @@ def responder_mensagem(mensagem: dict, telegram: Telegram, deps: Dependencias) -
         return processar_foto(telegram.baixar(arquivo_id), tipo, mensagem.get("caption", ""), deps)
 
     return [processar_texto(mensagem.get("text", ""), deps, nome)]
+
+
+def _executar_cron(request: Request, chave: str, tarefa) -> dict:
+    """Rotas chamadas pelo cron-job.org. Aceitam a senha em ?chave= ou no cabeçalho Authorization."""
+    config = carregar_config()
+    autorizacao = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not (iguais(chave, config.venire_secret) or iguais(autorizacao, config.venire_secret)):
+        raise HTTPException(status_code=401, detail="Chave inválida.")
+    if config.chat_id_autorizado is None:
+        raise HTTPException(status_code=503, detail="TELEGRAM_CHAT_ID não configurado.")
+    telegram = Telegram(config.telegram_token)
+    try:
+        return {"ok": True, **tarefa(montar_dependencias(config),
+                                     lambda texto: telegram.enviar(config.chat_id_autorizado, texto))}
+    except Exception as erro:
+        log.exception("Erro na tarefa agendada")
+        raise HTTPException(status_code=500, detail=f"Erro: {erro}") from erro
+
+
+@app.get("/cron/lembretes")
+def cron_lembretes(request: Request, chave: str = ""):
+    return _executar_cron(request, chave, automacoes.executar_lembretes)
+
+
+@app.get("/cron/manha")
+def cron_manha(request: Request, chave: str = ""):
+    return _executar_cron(request, chave, automacoes.executar_manha)
+
+
+@app.get("/cron/noite")
+def cron_noite(request: Request, chave: str = ""):
+    return _executar_cron(request, chave, automacoes.executar_noite)
 
 
 @app.post("/webhook")

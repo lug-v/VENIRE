@@ -12,7 +12,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 3 — Agenda no Google Agenda, dias da semana e conflitos
 - [x] Fase 4 — Áudio e foto
 - [ ] Fase 5 — Corrigir, cancelar e perguntar
-- [ ] Fase 6 — Aviso 1 hora antes, resumo das 6h30 e resumo semanal
+- [x] Fase 6 — Aviso 1 hora antes, resumo das 6h30, da noite e semanal
 - [ ] Fase 7 — Orçamentos, alertas e mais testes
 - [ ] Fase 8 — Integração com o clari-analytics
 
@@ -89,6 +89,31 @@ Regras de data (a IA só copia a expressão; o Python calcula): “quinta” = p
 - **Áudio:** transcrito pelo Whisper (`whisper-large-v3-turbo`, no Groq) e tratado exatamente como uma mensagem escrita. A resposta mostra o que foi entendido.
 - **Foto:** a IA de visão classifica a imagem. Nota fiscal ou comprovante vira gasto (valor total, loja, data impressa); convite, cartaz ou agenda viram até 5 compromissos. Se não reconhecer nada, usa a legenda como mensagem.
 - Não há variável nova: usa a mesma `GROQ_API_KEY`. Limites: 20 MB para baixar do Telegram e 4 MB para imagens enviadas à IA (o Venire escolhe o maior tamanho de foto que cabe).
+
+## Avisos e resumos (fase 6)
+
+| O quê | Quando | Rota |
+|---|---|---|
+| Aviso de compromisso | 1 hora antes (checagem a cada 5 min) | `/cron/lembretes` |
+| Resumo da manhã: clima, dólar (PTAX), agenda, chuva × compromissos, gastos do mês | 6h30 | `/cron/manha` |
+| Resumo de gastos da semana passada | Segundas, junto com o da manhã | `/cron/manha` |
+| Previsão e compromissos de amanhã | 21h | `/cron/noite` |
+
+Comandos: `/hoje` (resumo da manhã a qualquer hora) e `/amanha`.
+
+### Configurar no cron-job.org
+
+Crie 3 tarefas em **Create cronjob**, todas com **Time zone: America/Sao_Paulo**:
+
+| Título | URL | Agendamento |
+|---|---|---|
+| Venire – lembretes | `https://SEU-PROJETO.vercel.app/cron/lembretes?chave=SUA_SENHA` | Every 5 minutes |
+| Venire – manhã | `https://SEU-PROJETO.vercel.app/cron/manha?chave=SUA_SENHA` | Every day at 06:30 |
+| Venire – noite | `https://SEU-PROJETO.vercel.app/cron/noite?chave=SUA_SENHA` | Every day at 21:00 |
+
+Cada envio é registrado na tabela `envios`, então o mesmo aviso nunca chega duas vezes. Se o Telegram falhar, a próxima chamada tenta de novo.
+
+Variáveis opcionais: `CIDADE`, `LATITUDE` e `LONGITUDE` (padrão: Bento Gonçalves). Clima pelo [Open-Meteo](https://open-meteo.com) e dólar pela API de dados abertos do Banco Central, ambos gratuitos e sem chave.
 
 ## Rodar no seu computador
 

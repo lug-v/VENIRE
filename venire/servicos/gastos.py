@@ -179,3 +179,11 @@ def resumo_semana(conexao, referencia: date) -> str:
     inicio = inicio_da_semana(referencia)
     return resumo(conexao, inicio, inicio + timedelta(days=6),
                   f"Gastos da semana ({formatar(inicio)[:5]} a {formatar(inicio + timedelta(days=6))[:5]})")
+
+
+def total(conexao, inicio: date, fim: date) -> tuple[Decimal, int]:
+    soma, quantidade = conexao.execute(
+        "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM expenses WHERE spent_on BETWEEN %s AND %s",
+        (inicio, fim),
+    ).fetchone()
+    return Decimal(soma), int(quantidade)

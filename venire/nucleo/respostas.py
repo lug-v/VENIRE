@@ -6,12 +6,15 @@ As dependências (banco, IA, planilha, agenda) chegam de fora, o que facilita os
 """
 
 from dataclasses import dataclass, field
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 import logging
 from typing import Callable
 
 from venire import pendencias
+from venire.config import FUSO
 from venire.datas import descrever, hoje, hora_atual
+from venire.nucleo import automacoes
 from venire.nucleo.interpretador import interpretar, interpretar_foto
 from venire.servicos import eventos, gastos
 from venire.servicos.eventos import Evento
@@ -24,7 +27,7 @@ AJUDA = (
     "• marcar reunião às 9 na quinta\n"
     "• agendar mês que vem dia 10 revisão do carro\n"
     "• dentista dia 20 às 14h30\n"
-    "Veja o dia com /agenda\n\n"
+    "Veja o dia com /agenda, /hoje (resumo completo) e /amanha\n\n"
     "💰 Gastos\n"
     "• GASTEI 250 GASOLINA\n"
     "• gasto 15 reais energético\n"
@@ -32,7 +35,8 @@ AJUDA = (
     "Resumos: /gastos (mês) e /semana\n\n"
     "🎙️ Áudio: fale do mesmo jeito que escreveria.\n"
     "📸 Foto: mande a nota fiscal, o comprovante do Pix ou um convite.\n\n"
-    "Em breve: ☀️ resumo das 6h30 e aviso 1 hora antes dos compromissos."
+    "⏰ Automático: aviso 1 hora antes de cada compromisso, resumo às 6h30 (clima, dólar, agenda e gastos), "
+    "resumo da semana às segundas e a agenda de amanhã às 21h."
 )
 
 
@@ -48,8 +52,12 @@ class Dependencias:
     banco: Callable[[], object]       # context manager de conexão
     planilha: Callable[[], object] | None = None
     calendario: Callable[[], object] | None = None
+    clima: Callable[[], object] | None = None
+    cambio: Callable[[], object] | None = None
+    cidade: str = "Bento Gonçalves"
     hoje: Callable[[], date] = hoje
     hora_atual: Callable[[], time] = hora_atual
+    agora: Callable[[], datetime] = lambda: datetime.now(ZoneInfo(FUSO))
 
 
 # ---------------------------------------------------------------- Mensagens
@@ -68,6 +76,12 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
             return Resposta(gastos.resumo_semana(conexao, deps.hoje()))
     if comando == "/agenda":
         return mostrar_agenda(deps)
+    if comando == "/hoje":
+        dia = deps.hoje()
+        return Resposta(automacoes.resumo_do_dia(deps, dia, automacoes.titulo_manha(dia), com_dolar_e_gastos=True))
+    if comando == "/amanha":
+        dia = deps.hoje() + timedelta(days=1)
+        return Resposta(automacoes.resumo_do_dia(deps, dia, automacoes.titulo_noite(dia), com_dolar_e_gastos=False))
     if comando:
         return Resposta("Não conheço esse comando. Use /ajuda para ver o que eu sei fazer.")
     if not texto:

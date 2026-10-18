@@ -39,6 +39,9 @@ class Config:
     google_conta_servico_json: str = ""
     google_planilha_id: str = ""
     google_agenda_id: str = ""
+    cidade: str = "Bento Gonçalves"
+    latitude: float = -29.1714
+    longitude: float = -51.5192
 
     @property
     def segredo_webhook(self) -> str:
@@ -61,4 +64,14 @@ def carregar_config() -> Config:
         google_conta_servico_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip(),
         google_planilha_id=os.getenv("GOOGLE_SHEET_ID", "").strip(),
         google_agenda_id=os.getenv("GOOGLE_CALENDAR_ID", "").strip(),
+        cidade=os.getenv("CIDADE", "").strip() or "Bento Gonçalves",
+        latitude=_numero(os.getenv("LATITUDE"), -29.1714),
+        longitude=_numero(os.getenv("LONGITUDE"), -51.5192),
     )
+
+
+def _numero(texto: str | None, padrao: float) -> float:
+    try:
+        return float(str(texto).replace(",", "."))
+    except (TypeError, ValueError):
+        return padrao
