@@ -24,7 +24,9 @@ from venire.banco import conectar  # noqa: E402
 from venire.canais.telegram import ErroTelegram, Telegram  # noqa: E402
 from venire.config import Config, carregar_config  # noqa: E402
 from venire.ia.groq import Groq  # noqa: E402
-from venire.nucleo.respostas import Dependencias, processar_botao, processar_texto  # noqa: E402
+from venire.nucleo.respostas import (  # noqa: E402
+    Dependencias, Resposta, processar_audio, processar_botao, processar_foto, processar_texto,
+)
 from venire.servicos.calendario import Calendario  # noqa: E402
 from venire.servicos.planilha import Planilha  # noqa: E402
 
@@ -44,7 +46,7 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 3,
+        "fase": 4,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,
@@ -142,6 +144,34 @@ def montar_dependencias(config: Config) -> Dependencias:
     )
 
 
+LIMITE_IMAGEM = 4 * 1024 * 1024  # o Groq aceita imagens em base64 de até 4 MB
+
+
+def responder_mensagem(mensagem: dict, telegram: Telegram, deps: Dependencias) -> list[Resposta]:
+    """Escolhe o caminho certo para texto, áudio ou foto."""
+    nome = (mensagem.get("from") or {}).get("first_name", "")
+    audio = mensagem.get("voice") or mensagem.get("audio")
+    if audio:
+        conteudo = telegram.baixar(audio["file_id"])
+        nome_arquivo = audio.get("file_name") or "audio.ogg"
+        return [processar_audio(conteudo, nome_arquivo, deps, nome)]
+
+    documento = mensagem.get("document") or {}
+    fotos = mensagem.get("photo") or []
+    if fotos or str(documento.get("mime_type", "")).startswith("image/"):
+        if fotos:
+            # O Telegram manda vários tamanhos; usa o maior que caiba no limite da IA.
+            cabem = [f for f in fotos if f.get("file_size", 0) <= LIMITE_IMAGEM] or fotos[:1]
+            arquivo_id, tipo = cabem[-1]["file_id"], "image/jpeg"
+        else:
+            if documento.get("file_size", 0) > LIMITE_IMAGEM:
+                return [Resposta("📸 Essa imagem é grande demais (máximo 4 MB). Mande como foto, não como arquivo.")]
+            arquivo_id, tipo = documento["file_id"], documento["mime_type"]
+        return processar_foto(telegram.baixar(arquivo_id), tipo, mensagem.get("caption", ""), deps)
+
+    return [processar_texto(mensagem.get("text", ""), deps, nome)]
+
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
@@ -181,9 +211,8 @@ async def webhook(
             telegram.editar(chat_id, mensagem["message_id"], resposta.texto, resposta.botoes)
         else:
             telegram.digitando(chat_id)
-            nome = (mensagem.get("from") or {}).get("first_name", "")
-            resposta = processar_texto(mensagem.get("text", ""), deps, nome)
-            telegram.enviar(chat_id, resposta.texto, resposta.botoes)
+            for resposta in responder_mensagem(mensagem, telegram, deps):
+                telegram.enviar(chat_id, resposta.texto, resposta.botoes)
     except Exception:
         # Sempre responde 200 ao Telegram; senão ele reenvia a mesma mensagem várias vezes.
         log.exception("Erro ao processar a mensagem")

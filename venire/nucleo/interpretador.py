@@ -1,4 +1,4 @@
-"""Uma única chamada à IA decide o tipo da mensagem e extrai os campos.
+"""Uma única chamada à IA decide o tipo da mensagem (ou da foto) e extrai os campos.
 
 A IA só EXTRAI o que foi dito. Datas, horas e validações são calculadas em Python.
 """
@@ -40,3 +40,29 @@ def interpretar(texto: str, ia) -> dict:
     if dados.get("eh_gasto") is True and "tipo" not in dados:  # formato antigo
         dados["tipo"] = "gasto"
     return dados
+
+
+INSTRUCOES_FOTO = f"""Você analisa uma foto enviada ao Venire, assessor pessoal de um brasileiro. Responda APENAS um JSON.
+
+"tipo":
+- "gasto": nota fiscal, cupom, recibo ou comprovante de pagamento (Pix, cartão, boleto pago).
+- "eventos": a foto mostra compromissos (convite, cartaz de evento, agenda escrita, print de conversa marcando algo).
+- "outro": qualquer outra coisa.
+
+Se tipo = "gasto":
+- "valor": o VALOR TOTAL PAGO (depois de descontos), como número. Não use subtotais nem impostos.
+- "descricao": resumo curto do que foi comprado (ex.: "compras de mercado", "combustível").
+- "estabelecimento": nome do lugar (nome fantasia, se houver).
+- "categoria": exatamente uma de: {", ".join(CATEGORIAS)}.
+- "forma_pagamento": exatamente uma de: {", ".join(PAGAMENTOS)}.
+- "quando": a data impressa no documento no formato DD/MM/AAAA, ou "" se não houver.
+
+Se tipo = "eventos":
+- "eventos": lista com no máximo 5 compromissos, cada um com "titulo", "data_texto" (como aparece:
+  "15/10", "sexta", "20 de novembro"), "hora_texto", "hora_fim_texto" e "local". Use "" quando faltar algo.
+
+Use a legenda, se houver, como contexto. NUNCA invente valores, datas ou horários que não estejam visíveis."""
+
+
+def interpretar_foto(imagem: bytes, tipo: str, legenda: str, ia) -> dict:
+    return ia.json_imagem(INSTRUCOES_FOTO, imagem, tipo, legenda)

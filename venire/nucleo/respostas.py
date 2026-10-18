@@ -12,7 +12,7 @@ from typing import Callable
 
 from venire import pendencias
 from venire.datas import descrever, hoje, hora_atual
-from venire.nucleo.interpretador import interpretar
+from venire.nucleo.interpretador import interpretar, interpretar_foto
 from venire.servicos import eventos, gastos
 from venire.servicos.eventos import Evento
 
@@ -30,7 +30,9 @@ AJUDA = (
     "• gasto 15 reais energético\n"
     "• almoço 32,90 ontem no débito\n"
     "Resumos: /gastos (mês) e /semana\n\n"
-    "Em breve: 🎙️ áudio, 📸 foto da nota e ☀️ resumo das 6h30."
+    "🎙️ Áudio: fale do mesmo jeito que escreveria.\n"
+    "📸 Foto: mande a nota fiscal, o comprovante do Pix ou um convite.\n\n"
+    "Em breve: ☀️ resumo das 6h30 e aviso 1 hora antes dos compromissos."
 )
 
 
@@ -52,7 +54,7 @@ class Dependencias:
 
 # ---------------------------------------------------------------- Mensagens
 
-def processar_texto(texto: str, deps: Dependencias, nome: str = "") -> Resposta:
+def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str = "texto") -> Resposta:
     texto = (texto or "").strip()
     comando = texto.split()[0].lower().split("@")[0] if texto.startswith("/") else ""
 
@@ -69,12 +71,12 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "") -> Resposta:
     if comando:
         return Resposta("Não conheço esse comando. Use /ajuda para ver o que eu sei fazer.")
     if not texto:
-        return Resposta("Por enquanto eu só entendo texto. Áudio e foto chegam nas próximas fases. 😉")
+        return Resposta("Me mande um texto, um áudio ou uma foto. 🙂")
 
     dados = interpretar(texto, deps.ia())
     tipo = dados.get("tipo")
     if tipo == "gasto":
-        return registrar_gasto(dados, texto, deps)
+        return registrar_gasto(dados, texto, deps, origem)
     if tipo == "evento":
         return agendar_pedido(dados, texto, deps)
     saudacao = f", {nome}" if nome else ""
@@ -85,10 +87,44 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "") -> Resposta:
     )
 
 
-def registrar_gasto(dados: dict, texto: str, deps: Dependencias) -> Resposta:
+def processar_audio(audio: bytes, nome_arquivo: str, deps: Dependencias, nome: str = "") -> Resposta:
+    """O áudio vira texto (Whisper) e segue exatamente o mesmo caminho de uma mensagem escrita."""
+    transcricao = deps.ia().transcrever(audio, nome_arquivo)
+    if not transcricao:
+        return Resposta("🎙️ Não consegui entender o áudio. Pode tentar de novo, falando um pouco mais perto?")
+    resposta = processar_texto(transcricao, deps, nome, origem="audio")
+    resposta.texto = f"🎙️ “{transcricao}”\n\n{resposta.texto}"
+    return resposta
+
+
+def processar_foto(imagem: bytes, tipo: str, legenda: str, deps: Dependencias) -> list[Resposta]:
+    """Nota fiscal ou comprovante vira gasto; convite ou agenda vira compromissos."""
+    dados = interpretar_foto(imagem, tipo, legenda, deps.ia())
+    origem_texto = f"Foto: {legenda}" if legenda else "Foto"
+    if dados.get("tipo") == "gasto":
+        resposta = registrar_gasto(dados, origem_texto, deps, origem="foto")
+        resposta.texto = "📸 " + resposta.texto
+        return [resposta]
+    if dados.get("tipo") == "eventos":
+        lista = [e for e in (dados.get("eventos") or []) if isinstance(e, dict)][:5]
+        if lista:
+            respostas = [agendar_pedido(e, origem_texto, deps) for e in lista]
+            if len(lista) > 1:
+                respostas.insert(0, Resposta(f"📸 Encontrei {len(lista)} compromissos na foto:"))
+            return respostas
+    if legenda.strip():  # foto sem nota nem compromisso: a legenda vale como mensagem
+        return [processar_texto(legenda, deps, origem="foto")]
+    return [Resposta(
+        "📸 Não encontrei uma nota fiscal, comprovante ou compromisso nessa foto.\n"
+        "Se for um gasto, mande uma legenda junto, como “gasolina 250”."
+    )]
+
+
+def registrar_gasto(dados: dict, texto: str, deps: Dependencias, origem: str = "texto") -> Resposta:
     gasto = gastos.de_dados(dados, texto, deps.hoje())
     if gasto is None:
         return Resposta("Não encontrei o valor do gasto. Tente algo como “gastei 40 no mercado”.")
+    gasto.origem = origem
     with deps.banco() as conexao:
         gastos.salvar(conexao, gasto)
 

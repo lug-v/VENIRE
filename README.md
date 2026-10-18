@@ -10,7 +10,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 1 — Bot respondendo no Telegram, rodando na Vercel
 - [x] Fase 2 — Gastos por texto (Neon + Google Planilha)
 - [x] Fase 3 — Agenda no Google Agenda, dias da semana e conflitos
-- [ ] Fase 4 — Áudio e foto
+- [x] Fase 4 — Áudio e foto
 - [ ] Fase 5 — Corrigir, cancelar e perguntar
 - [ ] Fase 6 — Aviso 1 hora antes, resumo das 6h30 e resumo semanal
 - [ ] Fase 7 — Orçamentos, alertas e mais testes
@@ -83,6 +83,12 @@ Os gastos ficam na tabela `expenses`, com as mesmas colunas usadas pelo clari-an
 Diagnóstico: `/agenda/diagnostico?chave=SUA_SENHA`.
 
 Regras de data (a IA só copia a expressão; o Python calcula): “quinta” = próxima quinta; “quinta da semana que vem” = quinta da semana seguinte (domingo a sábado); se hoje já é o dia citado, o Venire pergunta com botões; sem horário = evento de dia inteiro; sem horário final = 1 hora; de 1 a 6 sem “manhã” = tarde.
+
+## Áudio e foto (fase 4)
+
+- **Áudio:** transcrito pelo Whisper (`whisper-large-v3-turbo`, no Groq) e tratado exatamente como uma mensagem escrita. A resposta mostra o que foi entendido.
+- **Foto:** a IA de visão classifica a imagem. Nota fiscal ou comprovante vira gasto (valor total, loja, data impressa); convite, cartaz ou agenda viram até 5 compromissos. Se não reconhecer nada, usa a legenda como mensagem.
+- Não há variável nova: usa a mesma `GROQ_API_KEY`. Limites: 20 MB para baixar do Telegram e 4 MB para imagens enviadas à IA (o Venire escolhe o maior tamanho de foto que cabe).
 
 ## Rodar no seu computador
 

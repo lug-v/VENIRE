@@ -3,6 +3,8 @@
 import httpx
 
 API = "https://api.telegram.org/bot{token}/{metodo}"
+ARQUIVOS = "https://api.telegram.org/file/bot{token}/{caminho}"
+LIMITE_DOWNLOAD = 20 * 1024 * 1024  # o Telegram só deixa bots baixarem arquivos de até 20 MB
 
 
 class ErroTelegram(Exception):
@@ -46,6 +48,16 @@ class Telegram:
 
     def responder_botao(self, callback_id: str, aviso: str = "") -> dict:
         return self.chamar("answerCallbackQuery", callback_query_id=callback_id, text=aviso)
+
+    def baixar(self, arquivo_id: str) -> bytes:
+        """Baixa um arquivo enviado ao bot (áudio, foto ou documento)."""
+        info = self.chamar("getFile", file_id=arquivo_id)
+        if info.get("file_size", 0) > LIMITE_DOWNLOAD or not info.get("file_path"):
+            raise ErroTelegram("Arquivo grande demais: o limite é 20 MB.")
+        resposta = self._cliente.get(ARQUIVOS.format(token=self._token, caminho=info["file_path"]))
+        if resposta.status_code != 200:
+            raise ErroTelegram("Não consegui baixar o arquivo do Telegram.")
+        return resposta.content
 
     def digitando(self, chat_id: int) -> None:
         try:
