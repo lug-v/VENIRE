@@ -197,4 +197,6 @@ Considerando hoje = terça, 13/10/2026:
   - Variável nova: `GOOGLE_CALENDAR_ID` (o Gmail). Rota útil: `/agenda/diagnostico?chave=...`.
   - Decisões: uma única chamada à IA classifica (gasto, evento ou outro) e só copia as expressões de data e hora; o Python calcula. O Google Agenda é a fonte oficial (sem tabela espelho); pedidos que esperam clique ficam na tabela `pendencias`.
   - Lição: depois de cadastrar uma variável, só o Redeploy faz a versão no ar enxergá-la.
-- **Próxima:** fase 4 — áudio e foto (Whisper para áudio; leitura de nota fiscal por foto).
+- **Fase 4 — concluída (18/10/2026):** áudio transcrito pelo Whisper (`whisper-large-v3-turbo`) segue o caminho do texto, mostrando o que foi entendido; foto lida pela IA de visão (`qwen/qwen3.8-27b`): nota fiscal ou comprovante vira gasto (valor total, loja, data impressa), convite ou agenda viram até 5 compromissos, e sem reconhecimento a legenda vale como mensagem. Sem variável nova.
+  - Limites: 20 MB para baixar do Telegram, 4 MB para imagem enviada à IA; função da Vercel com até 60 s.
+- **Próxima:** fase 5 — corrigir, cancelar e perguntar ("na verdade foram 25", "desmarca a revisão do carro", "quanto gastei com gasolina?").
