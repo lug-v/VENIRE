@@ -214,11 +214,26 @@ def filtrar(deps, ids: list[int] | None = None, manter: bool = False) -> Resulta
     return resultado
 
 
+LIMITE_IMPORTACAO = 20             # notas do vault lidas por execução (o resto entra na próxima)
+IGNORADA_NO_VAULT = "ignorada no vault (venire: false ou vazia)"
+TRAVA_FILTRO = "trava:filtro"
+
+
+class FiltroOcupado(Exception):
+    """Outro filtro já está rodando (ex.: o Telegram reenviou o /filtrar)."""
+
+
+def _ignorar_no_vault(campos: dict, corpo: str) -> bool:
+    return campos.get("venire", "").lower() in ("false", "nao", "não", "no") or not corpo
+
+
 def importar_fontes(deps) -> tuple[int, int, str]:
     """Traz para o banco de ideias os conceitos que a tarefa do Windows copiou do vault.
 
     Nota nova → ideia "nova" (tipo conceito, origem obsidian). Nota editada → o texto é
-    atualizado, sem mudar o status. Notas com "venire: false" no topo ficam de fora.
+    atualizado, sem mudar o status. Notas com "venire: false" (ou vazias) ficam registradas
+    como descartadas, com o sha, para não serem baixadas de novo a cada filtro; se a marca
+    sair depois, a nota volta como "nova". Usa uma conexão só com o banco.
     Devolve (novas, atualizadas, erro).
     """
     if not getattr(deps, "notas", None):
@@ -229,26 +244,34 @@ def importar_fontes(deps) -> tuple[int, int, str]:
         arquivos = repo.listar(PASTA_FONTES)
         with deps.banco() as conexao:
             existentes = ideias.por_fonte(conexao)
-        for caminho, sha in sorted(arquivos.items()):
-            atual = existentes.get(caminho)
-            if atual and atual.fonte_sha == sha:
-                continue
-            campos, corpo = ideias.ler_nota_do_vault(repo.ler(caminho))
-            if campos.get("venire", "").lower() in ("false", "nao", "não", "no") or not corpo:
-                continue
-            if atual:
-                atual.texto_original, atual.fonte_sha = corpo[:ideias.LIMITE_TEXTO], sha
-                if atual.caminho_nota:
-                    gravar_nota(deps, atual)
-                with deps.banco() as conexao:
-                    ideias.atualizar(conexao, atual)
-                atualizadas += 1
-            else:
-                with deps.banco() as conexao:
-                    ideias.salvar(conexao, Ideia(
-                        tipo="conceito", texto_original=corpo, origem="obsidian", criado_em=deps.hoje(),
-                        titulo=ideias.nome_da_fonte(caminho), fonte=caminho, fonte_sha=sha))
-                novas += 1
+            mudadas = [(c, s) for c, s in sorted(arquivos.items())
+                       if not (c in existentes and existentes[c].fonte_sha == s)]
+            for caminho, sha in mudadas[:LIMITE_IMPORTACAO]:
+                campos, corpo = ideias.ler_nota_do_vault(repo.ler(caminho))
+                ignorar = _ignorar_no_vault(campos, corpo)
+                atual = existentes.get(caminho)
+                if atual is None:
+                    ideia = Ideia(tipo="conceito", texto_original=corpo, origem="obsidian", criado_em=deps.hoje(),
+                                  titulo=ideias.nome_da_fonte(caminho), fonte=caminho, fonte_sha=sha)
+                    if ignorar:
+                        ideia.status, ideia.motivo = "descartada", IGNORADA_NO_VAULT
+                    else:
+                        novas += 1
+                    ideias.salvar(conexao, ideia)
+                    continue
+                atual.fonte_sha = sha
+                if ignorar:
+                    if atual.status == "nova":
+                        atual.status, atual.motivo = "descartada", IGNORADA_NO_VAULT
+                elif atual.status == "descartada" and atual.motivo == IGNORADA_NO_VAULT:
+                    atual.texto_original, atual.status, atual.motivo = corpo[:ideias.LIMITE_TEXTO], "nova", ""
+                    novas += 1
+                else:
+                    atual.texto_original = corpo[:ideias.LIMITE_TEXTO]
+                    if atual.caminho_nota:
+                        gravar_nota(deps, atual)
+                    atualizadas += 1
+                ideias.atualizar(conexao, atual)
     except Exception as erro:
         log.exception("Falha ao importar os conceitos do vault")
         return novas, atualizadas, str(erro)
@@ -256,7 +279,19 @@ def importar_fontes(deps) -> tuple[int, int, str]:
 
 
 def filtrar_tudo(deps, rodadas: int = RODADAS_FILTRO) -> ResultadoFiltro | None:
-    """Importa os conceitos do vault e roda o filtro em rodadas de LIMITE_FILTRO ideias.
+    """Importa os conceitos do vault e roda o filtro com trava (uma execução por vez)."""
+    with deps.banco() as conexao:
+        if not envios.reservar_trava(conexao, TRAVA_FILTRO):
+            raise FiltroOcupado()
+    try:
+        return _filtrar_tudo(deps, rodadas)
+    finally:
+        with deps.banco() as conexao:
+            envios.liberar(conexao, TRAVA_FILTRO)
+
+
+def _filtrar_tudo(deps, rodadas: int) -> ResultadoFiltro | None:
+    """Rodadas de LIMITE_FILTRO ideias.
 
     Se uma rodada depois da primeira falhar (ex.: limite por minuto do Groq grátis),
     guarda o que já foi feito; as ideias restantes continuam "nova" para a próxima vez.
@@ -346,7 +381,10 @@ def recuperar(deps, ideia_id: int) -> tuple[str, Botoes]:
 
 def executar_filtro(deps, enviar: Callable[..., None]) -> dict:
     """Rota /cron/ideias (domingo às 20h). Não manda nada quando não há ideia nova."""
-    resultado = filtrar_tudo(deps)
+    try:
+        resultado = filtrar_tudo(deps)
+    except FiltroOcupado:
+        return {"enviados": 0, "filtradas": 0, "motivo": "outro filtro rodando"}
     if resultado is None:
         return {"enviados": 0, "filtradas": 0}
     texto, botoes = texto_filtro(resultado, deps)
@@ -394,21 +432,30 @@ def texto_rascunho(ideia: Ideia, titulo: str = "📣 Post de hoje") -> str:
 def executar_linkedin(deps, enviar: Callable[..., None]) -> dict:
     """Rota /cron/linkedin (todo dia às 8h).
 
-    1. Entrega o rascunho dos posts de hoje (escreve na hora se a véspera falhou).
+    1. Entrega o rascunho dos posts de hoje e dos atrasados que ainda não saíram (ex.: o Groq
+       caiu ou o cron falhou no dia). Escreve na hora se a véspera falhou. Um post que falha
+       não impede os outros; ele tenta de novo no dia seguinte.
     2. Escreve com antecedência os posts de amanhã (a "véspera").
     """
     hoje = deps.hoje()
-    enviados = escritos = 0
+    enviados = escritos = falhas = 0
     with deps.banco() as conexao:
-        de_hoje = ideias.do_dia(conexao, hoje)
+        pendentes = ideias.pendentes_ate(conexao, hoje)
         de_amanha = ideias.do_dia(conexao, hoje + timedelta(days=1))
 
-    for ideia in de_hoje:
-        if not ideia.post_texto:
-            preparar_post(deps, ideia)
-            escritos += 1
-        enviados += _enviar_uma_vez(deps, f"linkedin:{ideia.id}:{hoje}", texto_rascunho(ideia),
-                                    botoes_post(ideia), enviar)
+    for ideia in pendentes:
+        try:
+            if not ideia.post_texto:
+                preparar_post(deps, ideia)
+                escritos += 1
+            titulo = "📣 Post de hoje" if ideia.data_prevista == hoje else \
+                f"📣 Post atrasado (era de {descrever(ideia.data_prevista)})"
+            # A chave usa a data prevista: o atrasado sai uma vez só, e um post adiado sai de novo na nova data.
+            enviados += _enviar_uma_vez(deps, f"linkedin:{ideia.id}:{ideia.data_prevista}",
+                                        texto_rascunho(ideia, titulo), botoes_post(ideia), enviar)
+        except Exception:
+            falhas += 1
+            log.exception("Falha ao entregar o post %s; tenta de novo amanhã", ideia.id)
 
     for ideia in de_amanha:
         if ideia.post_texto:
@@ -418,7 +465,7 @@ def executar_linkedin(deps, enviar: Callable[..., None]) -> dict:
             escritos += 1
         except Exception:
             log.exception("Falha ao escrever o post de amanhã")  # amanhã tenta de novo
-    return {"enviados": enviados, "escritos": escritos}
+    return {"enviados": enviados, "escritos": escritos, "falhas": falhas}
 
 
 def _enviar_uma_vez(deps, chave: str, texto: str, botoes: Botoes, enviar) -> int:
@@ -479,12 +526,16 @@ def mudar_data(deps, ideia_id: int, nova_data=None, adiar_dias: int = 0) -> tupl
         if ideia is None or ideia.status != "agendada":
             return "Esse post não está mais agendado.", []
         ocupadas = ideias.datas_ocupadas(conexao) - {ideia.data_prevista}
+    aviso = ""
     if nova_data is None:
         base = (ideia.data_prevista or hoje) + timedelta(days=adiar_dias)
         nova_data = ideias.proxima_data_livre(ocupadas, hoje, a_partir=base)
+    elif nova_data in ocupadas or nova_data <= hoje:  # botão antigo: o dia foi ocupado depois
+        escolhida, nova_data = nova_data, ideias.data_pedida_livre(nova_data, ocupadas, hoje)
+        aviso = f"\n({descrever(escolhida).capitalize()} já não estava livre.)"
     ideia.data_prevista = nova_data
     _salvar(deps, ideia)
-    return f"📅 “{ideia.nome}” agora sai {descrever(nova_data)}.", []
+    return f"📅 “{ideia.nome}” agora sai {descrever(nova_data)}.{aviso}", []
 
 
 def descartar(deps, ideia_id: int) -> tuple[str, Botoes]:

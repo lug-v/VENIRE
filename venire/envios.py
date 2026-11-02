@@ -24,5 +24,15 @@ def reservar(conexao, chave: str) -> bool:
     return linha is not None
 
 
+def reservar_trava(conexao, chave: str, minutos: int = 5) -> bool:
+    """Trava curta: evita duas execuções ao mesmo tempo (ex.: o Telegram reenviando /filtrar).
+
+    Uma trava esquecida (a função caiu no meio) vence sozinha depois de `minutos`.
+    """
+    conexao.execute("DELETE FROM envios WHERE chave = %s AND enviado_em < NOW() - make_interval(mins => %s)",
+                    (chave, minutos))
+    return reservar(conexao, chave)
+
+
 def liberar(conexao, chave: str) -> None:
     conexao.execute("DELETE FROM envios WHERE chave = %s", (chave,))

@@ -316,8 +316,12 @@ def perguntar_tarefa_ou_ideia(dados: dict, texto: str, deps: Dependencias, orige
 
 
 def rodar_filtro(deps: Dependencias) -> Resposta:
+    """/filtrar faz uma rodada só, para responder bem antes do limite de 60 s da Vercel.
+    O filtro de domingo (cron) faz duas."""
     try:
-        resultado = conteudo.filtrar_tudo(deps)
+        resultado = conteudo.filtrar_tudo(deps, rodadas=1)
+    except conteudo.FiltroOcupado:
+        return Resposta("🧹 O filtro já está rodando. Espere a mensagem dele chegar.")
     except Exception as erro:
         log.exception("Falha no filtro de ideias")
         return Resposta(f"😕 Não consegui rodar o filtro agora. As ideias continuam guardadas.\nMotivo: {erro}")
@@ -327,7 +331,7 @@ def rodar_filtro(deps: Dependencias) -> Resposta:
 def mostrar_linkedin(deps: Dependencias) -> Resposta:
     with deps.banco() as conexao:
         proximos = ideias.proximas(conexao, deps.hoje())
-    return Resposta(ideias.texto_linkedin(proximos),
+    return Resposta(ideias.texto_linkedin(proximos, deps.hoje()),
                     [(f"📅 {i.data_prevista:%d/%m} · {i.nome[:30]}", f"lt:{i.id}") for i in proximos])
 
 
@@ -562,9 +566,20 @@ def botao_de_ideia(acao: str, resto: str, deps: Dependencias) -> Resposta:
     ideia_id = int(numero)
 
     if acao == "ix":
+        # Desfazer só vale antes do filtro. Depois disso a ideia já tem nota e data:
+        # tirar do calendário é com o 🗑️ Descartar, que mantém a nota coerente.
         with deps.banco() as conexao:
-            apagada = ideias.apagar(conexao, ideia_id)
-        return Resposta("↩️ Removida do banco de ideias." if apagada else "Essa ideia já tinha sido removida.")
+            ideia = ideias.buscar(conexao, ideia_id)
+            if ideia is not None and ideia.status == "nova":
+                ideias.apagar(conexao, ideia_id)
+        if ideia is None:
+            return Resposta("Essa ideia já tinha sido removida.")
+        if ideia.status == "nova":
+            return Resposta("↩️ Removida do banco de ideias.")
+        if ideia.status == "agendada":
+            return Resposta(f"Essa ideia já passou pelo filtro e está agendada para {descrever(ideia.data_prevista)}.\n"
+                            "Para tirar do calendário, toque em 🗑️ Descartar.", [("🗑️ Descartar", f"ld:{ideia.id}")])
+        return Resposta(f"Essa ideia já passou pelo filtro ({ideia.status}), então não dá mais para desfazer.")
 
     try:
         if acao == "ir":

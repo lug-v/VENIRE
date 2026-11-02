@@ -60,17 +60,21 @@ if ($Instalar) {
     if ($PSCommandPath -ne $script) { Copy-Item $PSCommandPath $script -Force }
     $acao = New-ScheduledTaskAction -Execute "conhost.exe" `
         -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$script`""
-    $quando = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15)
-    $opcoes = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger $quando -Settings $opcoes `
+    # A cada 15 min e, para o PC que ficou desligado, 2 min depois de entrar no Windows.
+    # StartWhenAvailable recupera a execucao perdida; RunOnlyIfNetworkAvailable espera o Wi-Fi conectar.
+    $repetir = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15)
+    $aoEntrar = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $aoEntrar.Delay = "PT2M"
+    $opcoes = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger @($repetir, $aoEntrar) -Settings $opcoes `
         -Description "Copia os conceitos do MBA para o Venire e traz as notas do Venire para o vault BRAIN." -Force | Out-Null
     Write-Output "Tarefa '$Tarefa' criada: roda a cada 15 minutos. Log em $Log"
 }
 
 try {
     # 1. Traz o que o Venire gravou.
-    Git @("pull", "--rebase", "--quiet") | Out-Null
+    Git @("pull", "--rebase", "--autostash", "--quiet") | Out-Null
 
     # 2. Vault -> GitHub: copia dos conceitos (espelho: conceito apagado no vault sai da copia).
     Copiar $Conceitos (Join-Path $Repo "_fontes\MBA") @("/MIR")
@@ -79,7 +83,7 @@ try {
         Git @("commit", "--quiet", "-m", "Vault: conceitos do MBA atualizados") | Out-Null
         try { Git @("push", "--quiet") | Out-Null }
         catch {  # o Venire gravou uma nota no meio do caminho: junta e tenta de novo
-            Git @("pull", "--rebase", "--quiet") | Out-Null
+            Git @("pull", "--rebase", "--autostash", "--quiet") | Out-Null
             Git @("push", "--quiet") | Out-Null
         }
         Registrar "Conceitos enviados ao GitHub."

@@ -301,6 +301,13 @@ Telegram (texto, áudio ou foto)
 - Botões: ↩️ Desfazer na captura; ♻️ Manter no resumo do filtro (a ideia volta e é aprovada); ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar no rascunho; em `/linkedin`, um botão por post para trocar a data (mostra as próximas 4 terças e quintas livres).
 - `/cron/linkedin` roda todo dia às 8h: entrega o rascunho dos posts de hoje e escreve os de amanhã (a véspera). Se a véspera falhar, o post é escrito na hora.
 - **Integração com o vault BRAIN (02/11/2026):** em vez do plugin Obsidian Git (que exigiria pôr o vault inteiro no GitHub), uma tarefa do Windows a cada 15 min copia `10 MBA/Conceitos` → `_fontes/MBA` no repositório das notas e traz as notas do Venire → `BRAIN/40 VENIRE`. O filtro importa os conceitos novos (tipo conceito, origem obsidian, sem duplicar: colunas `fonte` e `fonte_sha`), atualiza os editados sem mudar o status e mantém o nome original, para a nota do Venire ligar de volta com `Fonte: [[...]]`. Todos os conceitos entram; `venire: false` no frontmatter deixa um de fora. Para caber no Groq grátis, o filtro recebe no máximo 1.500 caracteres de cada ideia.
+- **Correções da revisão (02/11/2026):**
+  - Post que falha às 8h (Groq fora, cron com erro) não se perde: `/cron/linkedin` entrega também os atrasados ("📣 Post atrasado"), um de cada vez sem travar os outros, e o `/linkedin` mostra "⚠️ atrasado". Um post adiado sai de novo na nova data.
+  - `/filtrar` faz 1 rodada (o domingo faz 2), a importação usa uma conexão só e lê no máximo 20 notas por vez, e uma trava de 5 min impede dois filtros ao mesmo tempo (o Telegram reenvia a mensagem quando a resposta demora).
+  - Notas com `venire: false` ou vazias ficam registradas como descartadas, para não serem baixadas a cada filtro; se a marca sair, voltam como novas.
+  - Data pedida que já tem post vai para a próxima terça ou quinta livre; o mesmo vale para um botão antigo de "trocar data".
+  - ↩️ Desfazer só apaga ideias que ainda não passaram pelo filtro; depois disso, oferece 🗑️ Descartar.
+  - Tarefa do Windows: `git pull --autostash` (não trava se o PC desligar no meio), roda também 2 min depois de entrar no Windows e espera a internet conectar.
 - Ideia juntada a outra já aprovada: o texto entra na ideia antiga e a nota dela é atualizada.
 - Ficou de fora: editar o texto do post à mão pelo Telegram (hoje: ✏️ Reescrever pede uma nova versão à IA).
 

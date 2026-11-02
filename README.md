@@ -154,7 +154,7 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 - **Capturar:** “ideia: post sobre IA no comercial B2B”, “conceito: overfitting”, “nota: hoje entendi a diferença entre RAG e MCP”, “ideia para postar dia 20: …”. Também por áudio e por foto (slide, quadro, página de livro). Tem botão ↩️ Desfazer. Na dúvida entre tarefa e ideia, o Venire pergunta.
 - **Filtrar:** todo domingo às 20h (ou `/filtrar`), a IA aprova, junta repetidas ou descarta, e explica cada aprovada (tema, explicação breve, por que importa, exemplo, potencial de 0 a 10 e ângulo do post). O resumo traz o botão ♻️ Manter para desfazer um descarte.
 - **Obsidian:** cada aprovada vira um `.md` com frontmatter no repositório das notas, e a tarefa do Windows traz para `BRAIN\40 VENIRE`. Os conceitos do MBA (`BRAIN\10 MBA\Conceitos`) entram sozinhos no banco de ideias.
-- **LinkedIn:** as aprovadas ganham uma data (terças e quintas livres, maior potencial primeiro). Na véspera a IA escreve o post; no dia, às 8h, o rascunho chega com ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar. A publicação é manual (copiar e colar).
+- **LinkedIn:** as aprovadas ganham uma data (terças e quintas livres, maior potencial primeiro). Na véspera a IA escreve o post; no dia, às 8h, o rascunho chega com ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar. A publicação é manual (copiar e colar). Se o envio de um dia falhar, o post chega no dia seguinte como “📣 Post atrasado”.
 - **Acompanhar:** `/ideias` (contagem por status e últimas capturadas), `/linkedin` (próximos posts, com botão para trocar a data). O resumo das 6h30 mostra “📣 Post de hoje”.
 
 **Configuração usada: grátis, só com o Groq.** Não cadastre a `ANTHROPIC_API_KEY`; o filtro e os posts usam a mesma `GROQ_API_KEY` do resto. O filtro trabalha em rodadas de 8 ideias (até 2 por vez), para caber no limite do plano grátis; se sobrar algo, fica para o próximo domingo ou para um novo `/filtrar`.
@@ -167,7 +167,7 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 
 ### Obsidian no computador (vault BRAIN)
 
-Uma tarefa do Windows ([ferramentas/sincronizar_obsidian.ps1](ferramentas/sincronizar_obsidian.ps1)) roda a cada 15 minutos, mesmo com o Obsidian fechado:
+Uma tarefa do Windows ([ferramentas/sincronizar_obsidian.ps1](ferramentas/sincronizar_obsidian.ps1)) roda a cada 15 minutos, mesmo com o Obsidian fechado. Com o PC desligado nada se perde: as notas do Venire esperam no GitHub, e a tarefa roda 2 minutos depois de você entrar no Windows (esperando a internet conectar).
 
 | Direção | O que faz |
 |---|---|

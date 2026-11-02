@@ -181,10 +181,19 @@ def do_dia(conexao, dia: date) -> list[Ideia]:
     return [_da_linha(l) for l in linhas]
 
 
-def proximas(conexao, hoje: date, limite: int = 10) -> list[Ideia]:
+def pendentes_ate(conexao, dia: date) -> list[Ideia]:
+    """Posts agendados até o dia (inclusive): os de hoje e os atrasados que ainda não saíram."""
     linhas = conexao.execute(
-        f"SELECT id, {', '.join(COLUNAS)} FROM ideias WHERE status = 'agendada' AND data_prevista >= %s "
-        "ORDER BY data_prevista, id LIMIT %s", (hoje, limite)).fetchall()
+        f"SELECT id, {', '.join(COLUNAS)} FROM ideias WHERE status = 'agendada' AND data_prevista <= %s "
+        "ORDER BY data_prevista, id", (dia,)).fetchall()
+    return [_da_linha(l) for l in linhas]
+
+
+def proximas(conexao, hoje: date, limite: int = 10) -> list[Ideia]:
+    """Todos os posts agendados, inclusive os atrasados (aparecem primeiro)."""
+    linhas = conexao.execute(
+        f"SELECT id, {', '.join(COLUNAS)} FROM ideias WHERE status = 'agendada' AND data_prevista IS NOT NULL "
+        "ORDER BY data_prevista, id LIMIT %s", (limite,)).fetchall()
     return [_da_linha(l) for l in linhas]
 
 
@@ -209,15 +218,24 @@ def datas_livres(ocupadas: set[date], hoje: date, quantas: int = 4) -> list[date
     return livres
 
 
+def data_pedida_livre(pedida: date, ocupadas: set[date], hoje: date) -> date:
+    """A data pedida, se estiver livre; senão, a próxima terça ou quinta livre depois dela."""
+    if pedida > hoje and pedida not in ocupadas:
+        return pedida
+    return proxima_data_livre(ocupadas, hoje, a_partir=max(pedida, hoje) + timedelta(days=1))
+
+
 def distribuir(aprovadas: list[Ideia], ocupadas: set[date], hoje: date) -> None:
     """Dá uma data_prevista para cada ideia aprovada.
 
-    Quem já pediu uma data ("ideia para postar dia 20") fica com ela, se ainda estiver no futuro.
+    Quem já pediu uma data ("ideia para postar dia 20") fica com ela, se ainda estiver no futuro
+    e livre; se o dia já tem post, vai para a próxima terça ou quinta livre depois dele.
     O resto ocupa as próximas terças e quintas livres, maior potencial primeiro.
     """
     usadas = set(ocupadas)
     com_data = [i for i in aprovadas if i.data_prevista and i.data_prevista > hoje]
-    for ideia in com_data:
+    for ideia in sorted(com_data, key=lambda i: (i.data_prevista, i.id or 0)):
+        ideia.data_prevista = data_pedida_livre(ideia.data_prevista, usadas, hoje)
         usadas.add(ideia.data_prevista)
     resto = sorted((i for i in aprovadas if i not in com_data), key=lambda i: (-(i.potencial or 0), i.id or 0))
     for ideia in resto:
@@ -346,11 +364,13 @@ def texto_ideias(conexao) -> str:
     return "\n".join(linhas)
 
 
-def texto_linkedin(proximos: list[Ideia]) -> str:
+def texto_linkedin(proximos: list[Ideia], hoje: date | None = None) -> str:
     if not proximos:
         return ("📣 Nenhum post agendado.\n"
                 "As ideias aprovadas no filtro ganham uma data (terças e quintas). Use /filtrar.")
     linhas = ["📣 Próximos posts no LinkedIn"]
-    linhas += [f"• {descrever(i.data_prevista)} — {i.nome}" + (" ✍️" if i.post_texto else "") for i in proximos]
+    for i in proximos:
+        atraso = " ⚠️ atrasado" if hoje and i.data_prevista < hoje else ""
+        linhas.append(f"• {descrever(i.data_prevista)} — {i.nome}" + (" ✍️" if i.post_texto else "") + atraso)
     linhas += ["", "✍️ = rascunho já escrito. Toque num post para trocar a data."]
     return "\n".join(linhas)

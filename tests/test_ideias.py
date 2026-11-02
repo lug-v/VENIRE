@@ -216,9 +216,13 @@ class BancoMemoria:
         m(ideias, "do_dia", lambda c, d: [copy.deepcopy(i) for i in self.ideias.values()
                                           if i.status == "agendada" and i.data_prevista == d])
         m(ideias, "proximas", lambda c, d, limite=10: sorted(
-            (copy.deepcopy(i) for i in self.ideias.values() if i.status == "agendada" and i.data_prevista >= d),
+            (copy.deepcopy(i) for i in self.ideias.values() if i.status == "agendada" and i.data_prevista),
             key=lambda i: (i.data_prevista, i.id))[:limite])
+        m(ideias, "pendentes_ate", lambda c, d: sorted(
+            (copy.deepcopy(i) for i in self.ideias.values() if i.status == "agendada" and i.data_prevista <= d),
+            key=lambda i: (i.data_prevista, i.id)))
         m(envios, "reservar", lambda c, k: k not in self.envios and not self.envios.add(k))
+        m(envios, "reservar_trava", lambda c, k, minutos=5: k not in self.envios and not self.envios.add(k))
         m(envios, "liberar", lambda c, k: self.envios.discard(k))
         m(pendencias, "guardar", self.guardar_pendencia)
         m(pendencias, "retirar", lambda c, x: self.pendencias.pop(x, None))
@@ -431,9 +435,17 @@ def test_filtro_em_rodadas(memoria):
     for n in range(1, 11):
         capturar(memoria, "x", tipo="conceito", texto=f"conceito {n}")
     memoria.ia_falsa.filtro = [aprovar(n, f"Conceito {n}") for n in range(1, 11)]
+    # /filtrar faz uma rodada só (para caber nos 60 s da Vercel)...
     texto = processar_texto("/filtrar", memoria).texto
-    assert "✅ Aprovadas (10)" in texto and "⏳" not in texto
-    assert [len(p["novas"]) for p in memoria.ia_falsa.pedidos] == [8, 2]
+    assert "✅ Aprovadas (8)" in texto and "⏳ 2 ficaram para o próximo filtro" in texto
+    # ...e o filtro de domingo faz duas.
+    for n in range(11, 21):
+        capturar(memoria, "x", tipo="conceito", texto=f"conceito {n}")
+    memoria.ia_falsa.filtro = [aprovar(n, f"Conceito {n}") for n in range(1, 21)]
+    enviadas = []
+    conteudo.executar_filtro(memoria, lambda t, b=None: enviadas.append(t))
+    assert "✅ Aprovadas (12)" in enviadas[0] and "⏳" not in enviadas[0]
+    assert [len(p["novas"]) for p in memoria.ia_falsa.pedidos] == [8, 8, 4]
 
 
 def test_segunda_rodada_falha_e_guarda_a_primeira(memoria):
@@ -447,7 +459,9 @@ def test_segunda_rodada_falha_e_guarda_a_primeira(memoria):
             raise ErroIA("Groq respondeu 429: rate limit")
         return original(instrucoes, mensagem)
     memoria.ia_falsa.json = limite_na_segunda
-    texto = processar_texto("/filtrar", memoria).texto
+    enviadas = []
+    conteudo.executar_filtro(memoria, lambda t, b=None: enviadas.append(t))   # 2 rodadas
+    texto = enviadas[0]
     assert "✅ Aprovadas (8)" in texto
     assert "⏳ 2 ficaram para o próximo filtro (ou use /filtrar de novo)." in texto
     assert sum(i.status == "nova" for i in memoria.memoria.ideias.values()) == 2
@@ -569,14 +583,14 @@ def test_linkedin_vespera_dia_e_botoes(memoria, monkeypatch):
     memoria.ia_falsa.posts = ["Seu modelo decorou a prova?\n\n...\n\n#ia #dados #vendas"]
     enviados = []
     enviar = lambda texto, botoes=None: enviados.append((texto, botoes))   # noqa: E731
-    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 0, "escritos": 1}
+    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 0, "escritos": 1, "falhas": 0}
     assert memoria.memoria.ideias[1].post_texto.startswith("Seu modelo decorou a prova?")
     assert "Seu modelo decorou a prova?" in NotasFalsas.arquivos["IA e Dados/Overfitting (1).md"]
     assert "✍️" in processar_texto("/linkedin", memoria).texto
 
     # Terça, 8h: entrega o rascunho com os 4 botões (amanhã é quarta, sem post).
     monkeypatch.setattr(memoria, "hoje", lambda: TERCA)
-    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 1, "escritos": 0}
+    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 1, "escritos": 0, "falhas": 0}
     texto, botoes = enviados[0]
     assert texto.startswith("📣 Post de hoje: Overfitting\n\nSeu modelo decorou a prova?")
     assert [b[0] for b in botoes] == ["✅ Publiquei", "✏️ Reescrever", "⏭️ Adiar uma semana", "🗑️ Descartar"]
@@ -599,10 +613,10 @@ def test_linkedin_vespera_dia_e_botoes(memoria, monkeypatch):
 
     # Quarta, 8h: escreve o de quinta. Quinta: se a véspera falhou, escreve na hora e entrega.
     monkeypatch.setattr(memoria, "hoje", lambda: date(2026, 11, 4))
-    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 0, "escritos": 1}
+    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 0, "escritos": 1, "falhas": 0}
     memoria.memoria.ideias[2].post_texto = ""
     monkeypatch.setattr(memoria, "hoje", lambda: QUINTA)
-    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 1, "escritos": 1}
+    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 1, "escritos": 1, "falhas": 0}
     assert enviados[-1][0].startswith("📣 Post de hoje: CRM com IA")
 
 
@@ -616,6 +630,130 @@ def test_adiar_trocar_data_e_descartar(memoria):
     assert memoria.memoria.ideias[2].data_prevista is None
     assert processar_botao("la:2", memoria).texto == "Esse post não está mais agendado."
     assert processar_botao("lp:99", memoria).texto == "Essa ideia não existe mais."
+
+
+# ---------------------------------------------------------------- Correções da revisão
+
+def test_post_que_falhou_sai_atrasado_e_nao_trava_os_outros(memoria, monkeypatch):
+    agendar_dois(memoria)                            # 1 → terça 03/11, 2 → quinta 05/11
+    original = memoria.ia_falsa.json
+
+    def groq_fora(instrucoes, mensagem):
+        raise ErroIA("Groq respondeu 429")
+    memoria.ia_falsa.json = groq_fora
+    enviados = []
+    enviar = lambda texto, botoes=None: enviados.append(texto)   # noqa: E731
+    monkeypatch.setattr(memoria, "hoje", lambda: TERCA)
+    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 0, "escritos": 0, "falhas": 1}
+    assert "⚠️ atrasado" not in processar_texto("/linkedin", memoria).texto
+
+    # Quarta: o Groq voltou. O post de terça sai como atrasado e continua visível até ser resolvido.
+    memoria.ia_falsa.json = original
+    monkeypatch.setattr(memoria, "hoje", lambda: date(2026, 11, 4))
+    assert "terça, 03/11 — Overfitting ⚠️ atrasado" in processar_texto("/linkedin", memoria).texto
+    assert conteudo.executar_linkedin(memoria, enviar)["enviados"] == 1
+    assert enviados[0].startswith("📣 Post atrasado (era de terça, 03/11): Overfitting")
+    assert conteudo.executar_linkedin(memoria, enviar)["enviados"] == 0     # sai uma vez só
+
+    # Dois posts no mesmo dia: a falha no primeiro não impede o segundo.
+    memoria.memoria.ideias[1].post_texto = ""
+    memoria.memoria.ideias[1].data_prevista = QUINTA
+    memoria.memoria.ideias[2].post_texto = "Pronto #ia"
+    chamadas = {"n": 0}
+
+    def falha_so_no_primeiro(instrucoes, mensagem):
+        chamadas["n"] += 1
+        raise ErroIA("Groq respondeu 429")
+    memoria.ia_falsa.json = falha_so_no_primeiro
+    monkeypatch.setattr(memoria, "hoje", lambda: QUINTA)
+    assert conteudo.executar_linkedin(memoria, enviar) == {"enviados": 1, "escritos": 0, "falhas": 1}
+    assert enviados[-1].startswith("📣 Post de hoje: CRM com IA")
+
+
+def test_adiar_envia_de_novo_na_nova_data(memoria, monkeypatch):
+    agendar_dois(memoria)
+    enviados = []
+    monkeypatch.setattr(memoria, "hoje", lambda: TERCA)
+    conteudo.executar_linkedin(memoria, lambda t, b=None: enviados.append(t))
+    assert processar_botao("la:1", memoria).texto == "📅 “Overfitting” agora sai terça, 10/11."
+    monkeypatch.setattr(memoria, "hoje", lambda: date(2026, 11, 10))
+    conteudo.executar_linkedin(memoria, lambda t, b=None: enviados.append(t))
+    do_adiado = [t.split(":")[0] for t in enviados if "Overfitting" in t.split("\n")[0]]
+    assert do_adiado == ["📣 Post de hoje", "📣 Post de hoje"]     # terça 03/11 e de novo em 10/11
+    assert any(t.startswith("📣 Post atrasado (era de quinta, 05/11): CRM com IA") for t in enviados)
+
+
+def test_filtro_com_trava(memoria):
+    memoria.memoria.envios.add(conteudo.TRAVA_FILTRO)              # outro filtro rodando
+    capturar(memoria, "a", tipo="conceito", texto="churn")
+    assert processar_texto("/filtrar", memoria).texto == "🧹 O filtro já está rodando. Espere a mensagem dele chegar."
+    assert conteudo.executar_filtro(memoria, print)["motivo"] == "outro filtro rodando"
+    memoria.memoria.envios.clear()
+    memoria.ia_falsa.filtro = [aprovar(1, "Churn")]
+    assert "✅ Aprovadas (1)" in processar_texto("/filtrar", memoria).texto
+    assert conteudo.TRAVA_FILTRO not in memoria.memoria.envios          # liberada no fim
+
+    def quebrar(instrucoes, mensagem):
+        raise ErroIA("falhou")
+    capturar(memoria, "b", tipo="conceito", texto="LTV")
+    memoria.ia_falsa.json = quebrar
+    processar_texto("/filtrar", memoria)
+    assert conteudo.TRAVA_FILTRO not in memoria.memoria.envios          # liberada mesmo com erro
+
+
+def test_nota_ignorada_nao_e_baixada_de_novo_e_volta_se_desmarcar(memoria):
+    lidas = []
+    original = NotasFalsas.ler
+    NotasFalsas.ler = lambda self, c: lidas.append(c) or original(self, c)
+    try:
+        NotasFalsas.fontes = {"_fontes/MBA/Pessoal.md": ("s1", "---\nvenire: false\n---\n# Pessoal\ntexto")}
+        assert processar_texto("/filtrar", memoria).texto.startswith("🧹 Nada novo")
+        assert processar_texto("/filtrar", memoria).texto.startswith("🧹 Nada novo")
+        assert lidas == ["_fontes/MBA/Pessoal.md"]                      # baixada uma vez só
+        assert memoria.memoria.ideias[1].status == "descartada"
+
+        NotasFalsas.fontes = {"_fontes/MBA/Pessoal.md": ("s2", "# Pessoal\nagora pode")}   # tirou a marca
+        memoria.ia_falsa.filtro = [aprovar(1, "x")]
+        texto = processar_texto("/filtrar", memoria).texto
+    finally:
+        NotasFalsas.ler = original
+    assert "📥 1 conceito importado do Obsidian." in texto and "✅ Aprovadas (1)" in texto
+    assert memoria.memoria.ideias[1].texto_original == "# Pessoal\nagora pode"
+
+
+def test_importacao_limitada_por_execucao(memoria, monkeypatch):
+    monkeypatch.setattr(conteudo, "LIMITE_IMPORTACAO", 3)
+    NotasFalsas.fontes = {f"_fontes/MBA/C{n}.md": (f"s{n}", f"# C{n}") for n in range(5)}
+    assert conteudo.importar_fontes(memoria) == (3, 0, "")
+    assert conteudo.importar_fontes(memoria) == (2, 0, "")
+    assert conteudo.importar_fontes(memoria) == (0, 0, "")
+
+
+def test_data_pedida_ocupada_vai_para_o_proximo_dia_livre():
+    a = Ideia(id=1, data_prevista=QUINTA)
+    b = Ideia(id=2, data_prevista=QUINTA)                     # pediu o mesmo dia
+    c = Ideia(id=3, data_prevista=date(2026, 11, 10))         # pediu um dia já ocupado
+    ideias.distribuir([a, b, c], {date(2026, 11, 10)}, HOJE)
+    assert (a.data_prevista, b.data_prevista, c.data_prevista) == (
+        QUINTA, date(2026, 11, 12), date(2026, 11, 17))
+    assert ideias.data_pedida_livre(date(2026, 11, 20), set(), HOJE) == date(2026, 11, 20)   # sexta livre
+
+
+def test_trocar_para_data_que_foi_ocupada(memoria):
+    agendar_dois(memoria)                                     # 1 → 03/11, 2 → 05/11
+    texto = processar_botao("lq:2:2026-11-03", memoria).texto  # botão antigo: 03/11 já é do 1
+    assert texto == "📅 “CRM com IA” agora sai quinta, 05/11.\n(Terça, 03/11 já não estava livre.)"
+
+
+def test_desfazer_antigo_nao_apaga_ideia_agendada(memoria):
+    agendar_dois(memoria)
+    resposta = processar_botao("ix:1", memoria)
+    assert resposta.texto.startswith("Essa ideia já passou pelo filtro e está agendada para terça, 03/11.")
+    assert resposta.botoes == [("🗑️ Descartar", "ld:1")]
+    assert memoria.memoria.ideias[1].status == "agendada"
+    processar_botao("ld:1", memoria)
+    assert processar_botao("ix:1", memoria).texto == (
+        "Essa ideia já passou pelo filtro (descartada), então não dá mais para desfazer.")
 
 
 def test_resumo_da_manha_sem_post_nao_muda(memoria):
@@ -653,6 +791,10 @@ def test_sql_da_tabela_ideias(conexao_real):
     assert ideias.datas_ocupadas(c) == {TERCA}
     assert [i.id for i in ideias.do_dia(c, TERCA)] == [1]
     assert [i.id for i in ideias.proximas(c, HOJE)] == [1]
+    assert [i.id for i in ideias.pendentes_ate(c, TERCA)] == [1] and ideias.pendentes_ate(c, HOJE) == []
+    assert envios.reservar_trava(c, "trava:teste") and not envios.reservar_trava(c, "trava:teste")
+    c.execute("UPDATE envios SET enviado_em = NOW() - INTERVAL '10 minutes' WHERE chave = 'trava:teste'")
+    assert envios.reservar_trava(c, "trava:teste")              # trava esquecida vence sozinha
     assert ideias.apagar(c, 2) and not ideias.apagar(c, 2)
     assert ideias.buscar(c, 2) is None
 
