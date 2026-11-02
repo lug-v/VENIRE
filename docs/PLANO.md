@@ -203,7 +203,7 @@ Considerando hoje = terça, 13/10/2026:
   - Agendador: cron-job.org com 3 tarefas (fuso America/Sao_Paulo): `/cron/lembretes` a cada 5 min, `/cron/manha` às 06:30 e `/cron/noite` às 21:00, todas com `?chave=VENIRE_SECRET`.
   - Tabela `envios` garante envio único e nova tentativa se o Telegram falhar. Variáveis opcionais: `CIDADE`, `LATITUDE`, `LONGITUDE` (padrão Bento Gonçalves).
   - Ficou de fora, por escolha: projeção de gastos do fim do mês (pode entrar na fase 7 ou 8).
-- **Próxima:** fase 5 — corrigir, cancelar e perguntar ("na verdade foram 25", "desmarca a revisão do carro", "quanto gastei com gasolina?").
+- **Próxima:** fase 10 — banco de ideias e conceitos (seção 11). As fases 5 e 9 continuam no plano, para depois.
 
 ## 10. Novas funções pedidas (18/10/2026) e nova ordem das fases
 
@@ -214,7 +214,7 @@ Considerando hoje = terça, 13/10/2026:
 | 7 | **Receitas e saldo do mês** (inclui a projeção do fim do mês) | ✅ concluída (18/10/2026) |
 | 8 | **Rotina e contas**: compromissos recorrentes, contas fixas com vencimento, lista de tarefas | ✅ concluída (18/10/2026) |
 | 9 | Orçamentos por categoria e alertas de gasto fora do padrão (antiga fase 7) | a fazer |
-| 10 | **Painel web dos gastos** + integração com o clari-analytics (antiga fase 8) | a fazer |
+| 10 | **Banco de ideias e conceitos**: captura no Telegram, filtro com o Claude, nota no Obsidian e post no LinkedIn na data prevista | **próxima** |
 
 ### Fase 7 — Receitas e saldo ✅
 - Registrar ganhos por texto, áudio ou foto (comprovante de Pix recebido): "ganhei 2000 reais", "recebi 50 reais", "caiu o salário de 3.500", "comissão de 800".
@@ -231,6 +231,79 @@ Considerando hoje = terça, 13/10/2026:
 - Tarefas sem horário: "lembrar de comprar ração"; aparecem no resumo da manhã até serem marcadas como feitas.
 - Como ficou no código: `venire/repeticao.py` transforma a expressão dita ("toda terça e quinta", "todo dia 10", "dias úteis", "a cada 15 dias") numa regra RRULE do Google Agenda e calcula a primeira ocorrência; desfazer apaga a série inteira. `servicos/contas.py` (tabelas `contas` e `contas_pagas`) e `servicos/tarefas.py` (tabela `tarefas`). Comandos /contas e /tarefas com botões. No dia do vencimento chega "📌 Hoje vence" com o botão "✅ Já paguei", que registra o gasto; mandar "paguei o aluguel 1450" também marca a conta como paga, e desfazer o gasto desmarca. Uma conta cadastrada depois do vencimento do mês só começa a contar no mês seguinte.
 
-### Fase 10 — Painel web
-- Página publicada na Vercel com gráficos de gastos e receitas por mês e categoria, saldo e projeção.
-- Bom material para o portfólio e para o LinkedIn.
+### Fase 10 — Banco de ideias e conceitos (02/11/2026)
+Substitui o antigo painel web, que saiu do plano. Detalhes na seção 11.
+
+## 11. Fase 10 — Banco de ideias e conceitos
+
+**Objetivo:** tudo o que eu aprender ou pensar (aula do MBA, artigo, insight do trabalho) entra pelo Telegram, é filtrado, vira uma nota explicada no Obsidian e, na data certa, vira um post no LinkedIn.
+
+> 🔒 **Regra da fase:** é uma vertente nova, somada ao que já existe. Agenda no Google Agenda, gastos e receitas na Google Planilha, contas, tarefas, avisos e resumos continuam **exatamente como estão**: nenhuma função atual muda de comportamento. A única mudança no código existente é o interpretador reconhecer os tipos novos; todos os testes atuais precisam continuar passando.
+
+### Fluxo
+
+```
+Telegram (texto, áudio ou foto)
+   → 1. Captura: o Venire identifica "ideia" ou "conceito" e guarda na tabela `ideias`
+   → 2. Filtro: o Claude revisa as novas, junta repetidas, descarta as fracas e explica cada uma
+   → 3. Obsidian: cada ideia aprovada vira uma nota Markdown com a explicação breve
+   → 4. LinkedIn: o Claude escreve o post e o Venire entrega o rascunho no Telegram na data prevista
+   → 5. Administração: comandos e botões para acompanhar o status de cada ideia
+```
+
+### 1. Captura no Telegram
+- O interpretador ganha mais três tipos: **anotação**, **conceito** e **ideia** (hoje: gasto, receita, evento, tarefa e outro).
+  - Anotação = registro do dia: "nota: hoje entendi a diferença entre RAG e MCP".
+  - Conceito = um termo para aprender ou explicar: "conceito: overfitting". A IA escreve o que o termo significa.
+  - Ideia = algo para criar ou postar: "ideia: post sobre usar IA no comercial B2B".
+  - Sem prefixo, a IA decide pelo conteúdo; se ficar em dúvida entre tarefa e ideia, pergunta com botões.
+- Funciona por texto, áudio (Whisper) e foto (slide da aula, quadro, página de livro: a IA de visão transcreve).
+- Resposta: "💡 Ideia guardada: ..." com o botão ↩️ Desfazer, no padrão das outras fases.
+
+### 2. Filtro com o Claude
+- Quando: todo domingo às 20h (`/cron/ideias`) ou na hora, pelo comando `/filtrar`.
+- O Claude (API da Anthropic) recebe as ideias com status `nova` e devolve JSON com, para cada uma:
+  - decisão: `aprovada`, `juntar com #id` ou `descartada` (com o motivo);
+  - tema (IA e Dados, Comercial B2B, Carreira, Automação, Outros);
+  - **explicação breve do conceito** em 3 a 5 linhas, em linguagem simples;
+  - por que importa e um exemplo prático;
+  - potencial para LinkedIn (0 a 10) e um ângulo sugerido para o post.
+- Chega no Telegram um resumo do filtro, com botões para reverter um descarte.
+
+### 3. Nota no Obsidian
+- Cada ideia aprovada vira um arquivo `.md` com frontmatter (`tipo`, `tema`, `status`, `criado`, `post_previsto`, `tags`) e seções: Explicação breve, Por que importa, Exemplo, Texto original e Post do LinkedIn.
+- Entrega: o Venire grava as notas num repositório do GitHub (`lug-v/venire-notas`) pela API; no computador, o plugin **Obsidian Git** puxa as notas para o vault. Custo zero e sem depender do PC ligado.
+
+### 4. Conteúdo para o LinkedIn na data prevista
+- As notas do Obsidian são a base: os posts nascem do que foi anotado, explicado e aprovado.
+- Cada ideia aprovada ganha uma `data_prevista`, encaixada no calendário editorial (padrão: 2 posts por semana, terça e quinta, maior potencial primeiro). A data pode ser escolhida na mensagem: "ideia para postar dia 20: ...".
+- Na véspera, o Claude escreve o post (gancho, explicação breve do conceito, exemplo, pergunta no fim, 3 a 5 hashtags).
+- No dia, às 8h (`/cron/linkedin`), o rascunho chega no Telegram com os botões **✅ Publiquei**, **✏️ Reescrever**, **⏭️ Adiar uma semana** e **🗑️ Descartar**.
+- A publicação é manual: a API do LinkedIn não libera postagem em perfil pessoal para apps simples. Copiar e colar leva 10 segundos.
+
+### 5. Administração
+- Status de cada ideia: `nova` → `aprovada` → `nota_criada` → `agendada` → `publicada` (ou `descartada`).
+- `/ideias`: quantas há em cada status e as últimas capturadas.
+- `/linkedin`: os próximos posts e as datas; botão para trocar a data.
+- O resumo das 6h30 ganha a linha "📣 Post de hoje: ..." quando houver.
+
+### Banco de dados
+- `ideias`: id, tipo (anotação/conceito/ideia), texto_original, origem (texto/áudio/foto), criado_em, status, tema, explicacao, potencial, data_prevista, caminho_nota, post_texto, publicado_em.
+
+### Variáveis novas
+| Nome | Valor |
+|---|---|
+| `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys |
+| `CLAUDE_MODEL` (opcional) | modelo usado no filtro e nos posts |
+| `GITHUB_TOKEN` | token com acesso só ao repositório das notas |
+| `OBSIDIAN_REPO` | `lug-v/venire-notas` |
+
+> 💰 A API do Claude é paga por uso. Com poucas ideias por semana o custo é de centavos por mês, mas deixa de ser custo zero. Alternativa grátis: usar o Groq no filtro e reservar o Claude para escrever os posts.
+
+### Ordem de construção
+1. Tipos anotação, conceito e ideia no interpretador + tabela `ideias` + `/ideias`, sem mudar as respostas dos tipos que já existem.
+2. Filtro com o Claude (`/filtrar` e `/cron/ideias`).
+3. Notas no repositório do Obsidian.
+4. Calendário editorial, rascunho do post e `/cron/linkedin`.
+
+**O que você aprende:** classificação com LLM, saída estruturada em JSON, uso de duas IAs com papéis diferentes, API do GitHub, Markdown com frontmatter e calendário editorial como regra de negócio.

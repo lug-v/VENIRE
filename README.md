@@ -16,7 +16,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 7 — Receitas e saldo do mês (com projeção do fechamento)
 - [x] Fase 8 — Rotina e contas: recorrentes, contas fixas e tarefas
 - [ ] Fase 9 — Orçamentos e alertas
-- [ ] Fase 10 — Painel web e integração com o clari-analytics
+- [ ] Fase 10 — Banco de ideias e conceitos: notas no Obsidian e posts no LinkedIn (**próxima**)
 
 ## Estrutura
 
