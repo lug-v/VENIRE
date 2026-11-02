@@ -44,6 +44,24 @@ class RepositorioNotas:
         if resposta.status_code not in (200, 201):
             raise ErroNotas(self._explicar(resposta))
 
+    def listar(self, pasta: str) -> dict[str, str]:
+        """Arquivos .md dentro da pasta → sha de cada um (o sha muda quando o arquivo muda)."""
+        url = f"https://api.github.com/repos/{self._repo}/git/trees/HEAD?recursive=1"
+        resposta = self._cliente.get(url, headers=self._cabecalho)
+        if resposta.status_code == 409:  # repositório vazio
+            return {}
+        if resposta.status_code != 200:
+            raise ErroNotas(self._explicar(resposta))
+        prefixo = pasta.strip("/") + "/"
+        return {item["path"]: item["sha"] for item in resposta.json().get("tree", [])
+                if item.get("type") == "blob" and item["path"].startswith(prefixo) and item["path"].endswith(".md")}
+
+    def ler(self, caminho: str) -> str:
+        resposta = self._cliente.get(self._url(caminho), headers=self._cabecalho)
+        if resposta.status_code != 200:
+            raise ErroNotas(self._explicar(resposta))
+        return base64.b64decode(resposta.json().get("content", "")).decode("utf-8", errors="replace")
+
     @staticmethod
     def _explicar(resposta: httpx.Response) -> str:
         if resposta.status_code == 401:

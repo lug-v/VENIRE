@@ -21,6 +21,9 @@ log = logging.getLogger("venire")
 LIMITE_FILTRO = 8         # ideias por rodada (cabe na resposta do Groq grátis, com folga)
 RODADAS_FILTRO = 2        # rodadas por execução; o que sobrar fica para o próximo filtro
 LIMITE_CONTEXTO = 40      # ideias já aprovadas enviadas ao filtro, para achar repetidas
+PASTA_FONTES = "_fontes"  # cópia dos conceitos do vault, enviada pela tarefa do Windows
+TEXTO_NO_FILTRO = 1500    # caracteres de cada ideia enviados ao filtro (o limite do Groq grátis é por minuto)
+TEXTO_NO_POST = 3000
 
 Botoes = list[tuple[str, str]]
 
@@ -29,7 +32,9 @@ e faz MBA em IA e Dados. Ele captura anotações, conceitos e ideias pelo Telegr
 nota no Obsidian e, depois, post no LinkedIn.
 
 Você recebe um JSON com:
-- "novas": itens para decidir (id, tipo, texto).
+- "novas": itens para decidir (id, tipo, origem, texto). Itens com "origem": "obsidian" são notas de estudo
+  do próprio dono, já revisadas: aprove, a não ser que estejam vazias ou repitam outro item, e baseie a
+  explicação no texto dele, sem contradizer.
 - "ja_aprovadas": itens aprovados antes (id, titulo), só para achar repetições.
 - "manter": ids que o dono pediu para manter; esses DEVEM ser aprovados.
 
@@ -97,6 +102,9 @@ class ResultadoFiltro:
     notas_gravadas: int = 0
     erro_notas: str = ""
     restantes: int = 0          # ideias que continuam esperando o próximo filtro
+    importadas: int = 0         # conceitos novos que vieram do vault
+    atualizadas_fonte: int = 0  # conceitos do vault que foram editados
+    erro_fontes: str = ""
 
 
 def _inteiro(valor) -> int | None:
@@ -109,7 +117,10 @@ def _inteiro(valor) -> int | None:
 def _aplicar_aprovacao(ideia: Ideia, decisao: dict) -> None:
     tema = str(decisao.get("tema") or "")
     ideia.status = "aprovada"
-    ideia.titulo = ideias.resumo(str(decisao.get("titulo") or ideia.texto_original), 60).rstrip("…")
+    if ideia.fonte:  # nota do vault: mantém o nome original, para o link [[...]] bater
+        ideia.titulo = ideias.nome_da_fonte(ideia.fonte)
+    else:
+        ideia.titulo = ideias.resumo(str(decisao.get("titulo") or ideia.texto_original), 60).rstrip("…")
     ideia.tema = tema if tema in ideias.TEMAS else "Outros"
     ideia.explicacao = str(decisao.get("explicacao") or "").strip()
     ideia.por_que_importa = str(decisao.get("por_que_importa") or "").strip()
@@ -163,7 +174,8 @@ def filtrar(deps, ids: list[int] | None = None, manter: bool = False) -> Resulta
         return None
 
     entrada = {
-        "novas": [{"id": i.id, "tipo": i.tipo, "texto": i.texto_original} for i in novas],
+        "novas": [{"id": i.id, "tipo": i.tipo, "origem": i.origem, "texto": i.texto_original[:TEXTO_NO_FILTRO]}
+                  for i in novas],
         "ja_aprovadas": [{"id": i.id, "titulo": i.nome} for i in anteriores],
         "manter": [i.id for i in novas] if manter else [],
     }
@@ -202,12 +214,54 @@ def filtrar(deps, ids: list[int] | None = None, manter: bool = False) -> Resulta
     return resultado
 
 
+def importar_fontes(deps) -> tuple[int, int, str]:
+    """Traz para o banco de ideias os conceitos que a tarefa do Windows copiou do vault.
+
+    Nota nova → ideia "nova" (tipo conceito, origem obsidian). Nota editada → o texto é
+    atualizado, sem mudar o status. Notas com "venire: false" no topo ficam de fora.
+    Devolve (novas, atualizadas, erro).
+    """
+    if not getattr(deps, "notas", None):
+        return 0, 0, ""
+    novas = atualizadas = 0
+    try:
+        repo = deps.notas()
+        arquivos = repo.listar(PASTA_FONTES)
+        with deps.banco() as conexao:
+            existentes = ideias.por_fonte(conexao)
+        for caminho, sha in sorted(arquivos.items()):
+            atual = existentes.get(caminho)
+            if atual and atual.fonte_sha == sha:
+                continue
+            campos, corpo = ideias.ler_nota_do_vault(repo.ler(caminho))
+            if campos.get("venire", "").lower() in ("false", "nao", "não", "no") or not corpo:
+                continue
+            if atual:
+                atual.texto_original, atual.fonte_sha = corpo[:ideias.LIMITE_TEXTO], sha
+                if atual.caminho_nota:
+                    gravar_nota(deps, atual)
+                with deps.banco() as conexao:
+                    ideias.atualizar(conexao, atual)
+                atualizadas += 1
+            else:
+                with deps.banco() as conexao:
+                    ideias.salvar(conexao, Ideia(
+                        tipo="conceito", texto_original=corpo, origem="obsidian", criado_em=deps.hoje(),
+                        titulo=ideias.nome_da_fonte(caminho), fonte=caminho, fonte_sha=sha))
+                novas += 1
+    except Exception as erro:
+        log.exception("Falha ao importar os conceitos do vault")
+        return novas, atualizadas, str(erro)
+    return novas, atualizadas, ""
+
+
 def filtrar_tudo(deps, rodadas: int = RODADAS_FILTRO) -> ResultadoFiltro | None:
-    """Roda o filtro em rodadas de LIMITE_FILTRO ideias.
+    """Importa os conceitos do vault e roda o filtro em rodadas de LIMITE_FILTRO ideias.
 
     Se uma rodada depois da primeira falhar (ex.: limite por minuto do Groq grátis),
     guarda o que já foi feito; as ideias restantes continuam "nova" para a próxima vez.
     """
+    importadas, atualizadas, erro_fontes = importar_fontes(deps)
     total = None
     for _ in range(rodadas):
         try:
@@ -231,7 +285,10 @@ def filtrar_tudo(deps, rodadas: int = RODADAS_FILTRO) -> ResultadoFiltro | None:
         feitas = len(rodada.aprovadas) + len(rodada.juntadas) + len(rodada.descartadas)
         if rodada.sem_resposta or feitas < LIMITE_FILTRO:
             break
+    if total is None and (atualizadas or erro_fontes):
+        total = ResultadoFiltro()
     if total:
+        total.importadas, total.atualizadas_fonte, total.erro_fontes = importadas, atualizadas, erro_fontes
         with deps.banco() as conexao:
             total.restantes = ideias.contagem(conexao).get("nova", 0)
     return total
@@ -241,6 +298,15 @@ def texto_filtro(resultado: ResultadoFiltro | None, deps) -> tuple[str, Botoes]:
     if resultado is None:
         return "🧹 Nada novo para filtrar. Mande uma ideia, um conceito ou uma anotação.", []
     linhas = ["🧹 Filtro do banco de ideias"]
+    if resultado.importadas or resultado.atualizadas_fonte:
+        partes = []
+        if resultado.importadas:
+            partes.append(f"📥 {resultado.importadas} {'conceito importado' if resultado.importadas == 1 else 'conceitos importados'}")
+        if resultado.atualizadas_fonte:
+            partes.append(f"🔄 {resultado.atualizadas_fonte} {'atualizado' if resultado.atualizadas_fonte == 1 else 'atualizados'}")
+        linhas += ["", " · ".join(partes) + " do Obsidian."]
+    if resultado.erro_fontes:
+        linhas += ["", f"⚠️ Não consegui ler os conceitos do Obsidian: {resultado.erro_fontes}"]
     if resultado.aprovadas:
         linhas += ["", f"✅ Aprovadas ({len(resultado.aprovadas)}):"]
         for i in sorted(resultado.aprovadas, key=lambda i: i.data_prevista or deps.hoje()):
@@ -295,7 +361,7 @@ def escrever_post(deps, ideia: Ideia, anterior: str = "") -> str:
     entrada = {
         "titulo": ideia.nome, "tema": ideia.tema, "explicacao": ideia.explicacao,
         "por_que_importa": ideia.por_que_importa, "exemplo": ideia.exemplo,
-        "angulo": ideia.angulo, "texto_original": ideia.texto_original,
+        "angulo": ideia.angulo, "texto_original": ideia.texto_original[:TEXTO_NO_POST],
     }
     if anterior:
         entrada["versao_anterior"] = anterior

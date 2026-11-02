@@ -153,7 +153,7 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 
 - **Capturar:** “ideia: post sobre IA no comercial B2B”, “conceito: overfitting”, “nota: hoje entendi a diferença entre RAG e MCP”, “ideia para postar dia 20: …”. Também por áudio e por foto (slide, quadro, página de livro). Tem botão ↩️ Desfazer. Na dúvida entre tarefa e ideia, o Venire pergunta.
 - **Filtrar:** todo domingo às 20h (ou `/filtrar`), a IA aprova, junta repetidas ou descarta, e explica cada aprovada (tema, explicação breve, por que importa, exemplo, potencial de 0 a 10 e ângulo do post). O resumo traz o botão ♻️ Manter para desfazer um descarte.
-- **Obsidian:** cada aprovada vira um `.md` com frontmatter no repositório das notas; o plugin **Obsidian Git** puxa para o vault.
+- **Obsidian:** cada aprovada vira um `.md` com frontmatter no repositório das notas, e a tarefa do Windows traz para `BRAIN\40 VENIRE`. Os conceitos do MBA (`BRAIN\10 MBA\Conceitos`) entram sozinhos no banco de ideias.
 - **LinkedIn:** as aprovadas ganham uma data (terças e quintas livres, maior potencial primeiro). Na véspera a IA escreve o post; no dia, às 8h, o rascunho chega com ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar. A publicação é manual (copiar e colar).
 - **Acompanhar:** `/ideias` (contagem por status e últimas capturadas), `/linkedin` (próximos posts, com botão para trocar a data). O resumo das 6h30 mostra “📣 Post de hoje”.
 
@@ -165,12 +165,24 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 | `OBSIDIAN_REPO` | `lug-v/venire-notas` |
 | `ANTHROPIC_API_KEY` (opcional, pago) | Só se um dia quiser o Claude. Com `CLAUDE_MODEL=claude-haiku-5-5`, custa cerca de US$ 0,01 por mês |
 
-### Obsidian no computador
+### Obsidian no computador (vault BRAIN)
 
-1. Clone o repositório das notas numa pasta e abra essa pasta como vault no Obsidian (ou clone dentro do vault que você já usa).
-2. Instale o plugin da comunidade **Git** (Obsidian Git) e ative.
-3. Nas opções do plugin, ligue **Pull on startup** e coloque **Auto pull interval** em 10 minutos.
-4. As notas chegam sozinhas sempre que o Obsidian estiver aberto. Não edite as notas do Venire no Obsidian: a próxima atualização do Venire sobrescreve o arquivo.
+Uma tarefa do Windows ([ferramentas/sincronizar_obsidian.ps1](ferramentas/sincronizar_obsidian.ps1)) roda a cada 15 minutos, mesmo com o Obsidian fechado:
+
+| Direção | O que faz |
+|---|---|
+| Vault → Venire | Copia `BRAIN\10 MBA\Conceitos` para `_fontes/MBA` no repositório das notas. As notas originais nunca são alteradas. |
+| Venire → Vault | Copia as notas do Venire para `BRAIN\40 VENIRE`. |
+
+No filtro de domingo (ou `/filtrar`), o Venire importa os conceitos novos como ideias e atualiza os que você editou. A nota gerada ganha `Fonte: [[nome do conceito]]`, ligando de volta à nota original. Para deixar um conceito de fora, coloque `venire: false` no frontmatter dele.
+
+Instalar (uma vez, no PowerShell):
+```
+powershell -ExecutionPolicy Bypass -File ferramentas\sincronizar_obsidian.ps1 -Instalar
+```
+Isso clona o repositório em `%USERPROFILE%\Venire\venire-notas` (fora do vault, para nada aparecer duplicado), liga o git ao login do GitHub CLI (`gh auth setup-git`) e cria a tarefa "Venire - sincronizar Obsidian". O log fica em `%USERPROFILE%\Venire\sincronizar.log`.
+
+Não edite as notas de `40 VENIRE`: o Venire sobrescreve o arquivo na próxima atualização. Para comentar uma ideia, crie uma nota sua e faça um link.
 
 No cron-job.org, crie mais 2 tarefas (fuso America/Sao_Paulo):
 

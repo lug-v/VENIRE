@@ -210,6 +210,7 @@ class BancoMemoria:
         m(ideias, "buscar", lambda c, x: copy.deepcopy(self.ideias.get(x)))
         m(ideias, "listar", self.listar)
         m(ideias, "contagem", self.contagem)
+        m(ideias, "por_fonte", lambda c: {i.fonte: copy.deepcopy(i) for i in self.ideias.values() if i.fonte})
         m(ideias, "datas_ocupadas", lambda c: {i.data_prevista for i in self.ideias.values()
                                                if i.status in ("agendada", "publicada") and i.data_prevista})
         m(ideias, "do_dia", lambda c, d: [copy.deepcopy(i) for i in self.ideias.values()
@@ -268,6 +269,7 @@ class IAFalsa:
 
 class NotasFalsas:
     arquivos: dict = {}
+    fontes: dict = {}          # caminho → (sha, conteúdo) dos conceitos copiados do vault
     falhar = False
 
     def gravar(self, caminho, texto, mensagem):
@@ -275,12 +277,18 @@ class NotasFalsas:
             raise ErroNotas("o GitHub recusou o GITHUB_TOKEN (vencido ou errado).")
         NotasFalsas.arquivos[caminho] = texto
 
+    def listar(self, pasta):
+        return {c: sha for c, (sha, _) in NotasFalsas.fontes.items() if c.startswith(pasta + "/")}
+
+    def ler(self, caminho):
+        return NotasFalsas.fontes[caminho][1]
+
 
 @pytest.fixture
 def memoria(monkeypatch):
     banco = BancoMemoria()
     banco.instalar(monkeypatch)
-    NotasFalsas.arquivos, NotasFalsas.falhar = {}, False
+    NotasFalsas.arquivos, NotasFalsas.fontes, NotasFalsas.falhar = {}, {}, False
     ia = IAFalsa()
 
     @contextmanager
@@ -445,6 +453,90 @@ def test_segunda_rodada_falha_e_guarda_a_primeira(memoria):
     assert sum(i.status == "nova" for i in memoria.memoria.ideias.values()) == 2
 
 
+NOTA_DO_VAULT = """---
+tipo: conceito
+disciplinas:
+  - "[[IA Generativa para Negócios]]"
+status: rascunho
+---
+# API, RAG e MCP
+
+> [!abstract] Em uma frase
+> A API é o canal, o RAG busca conhecimento e o MCP pluga ferramentas.
+"""
+
+
+def test_le_nota_do_vault():
+    campos, corpo = ideias.ler_nota_do_vault("﻿" + NOTA_DO_VAULT)
+    assert campos == {"tipo": "conceito", "disciplinas": "", "status": "rascunho"}
+    assert corpo.startswith("# API, RAG e MCP\n\n> [!abstract]")
+    assert ideias.ler_nota_do_vault("sem frontmatter") == ({}, "sem frontmatter")
+    assert ideias.nome_da_fonte("_fontes/MBA/API, RAG e MCP.md") == "API, RAG e MCP"
+
+
+def test_importa_conceitos_do_vault_e_liga_a_nota_original(memoria):
+    NotasFalsas.fontes = {
+        "_fontes/MBA/API, RAG e MCP.md": ("sha1", NOTA_DO_VAULT),
+        "_fontes/MBA/Rascunho pessoal.md": ("sha2", "---\nvenire: false\n---\n# Não importar"),
+        "_fontes/MBA/Vazia.md": ("sha3", "---\ntipo: conceito\n---\n"),
+        "Outra pasta/Ignorada.md": ("sha4", "# fora de _fontes"),
+    }
+    memoria.ia_falsa.filtro = [aprovar(1, "Título que a IA inventou", potencial=8)]
+    texto = processar_texto("/filtrar", memoria).texto
+    assert texto.splitlines()[:5] == [
+        "🧹 Filtro do banco de ideias", "", "📥 1 conceito importado do Obsidian.", "",
+        "✅ Aprovadas (1):"]
+    ideia = memoria.memoria.ideias[1]
+    assert (ideia.tipo, ideia.origem, ideia.fonte, ideia.titulo) == (
+        "conceito", "obsidian", "_fontes/MBA/API, RAG e MCP.md", "API, RAG e MCP")   # mantém o nome original
+    assert memoria.ia_falsa.pedidos[0]["novas"][0]["origem"] == "obsidian"
+    nota = NotasFalsas.arquivos["IA e Dados/API, RAG e MCP (1).md"]
+    assert "# API, RAG e MCP\n\nFonte: [[API, RAG e MCP]]\n" in nota
+
+    # Rodar de novo sem mudanças: nada novo.
+    assert processar_texto("/filtrar", memoria).texto.startswith("🧹 Nada novo para filtrar")
+
+    # Nota editada no vault: o texto e a nota do Venire são atualizados, sem voltar para o filtro.
+    NotasFalsas.fontes["_fontes/MBA/API, RAG e MCP.md"] = ("sha1b", NOTA_DO_VAULT + "\nExemplo novo da De Toni.")
+    texto = processar_texto("/filtrar", memoria).texto
+    assert "🔄 1 atualizado do Obsidian." in texto
+    assert memoria.memoria.ideias[1].status == "agendada"
+    assert "Exemplo novo da De Toni." in NotasFalsas.arquivos["IA e Dados/API, RAG e MCP (1).md"]
+
+
+def test_falha_ao_ler_o_vault_nao_trava_o_filtro(memoria):
+    def quebrar(pasta):
+        raise ErroNotas("o GitHub recusou o GITHUB_TOKEN (vencido ou errado).")
+    monkey = NotasFalsas.listar
+    NotasFalsas.listar = lambda self, pasta: quebrar(pasta)
+    try:
+        capturar(memoria, "a", tipo="conceito", texto="churn")
+        memoria.ia_falsa.filtro = [aprovar(1, "Churn")]
+        texto = processar_texto("/filtrar", memoria).texto
+    finally:
+        NotasFalsas.listar = monkey
+    assert "⚠️ Não consegui ler os conceitos do Obsidian: o GitHub recusou" in texto
+    assert "✅ Aprovadas (1)" in texto
+
+
+def test_repositorio_lista_e_le_fontes():
+    def github(request: httpx.Request):
+        if request.url.path.endswith("/git/trees/HEAD"):
+            return httpx.Response(200, json={"tree": [
+                {"path": "_fontes/MBA/A.md", "type": "blob", "sha": "s1"},
+                {"path": "_fontes/MBA", "type": "tree", "sha": "t"},
+                {"path": "_fontes/MBA/img.png", "type": "blob", "sha": "s2"},
+                {"path": "IA e Dados/B (1).md", "type": "blob", "sha": "s3"}]})
+        return httpx.Response(200, json={"content": base64.b64encode("# Olá".encode()).decode()})
+
+    repo = RepositorioNotas("ghp_x", "lug-v/venire-notas", cliente=httpx.Client(transport=httpx.MockTransport(github)))
+    assert repo.listar("_fontes") == {"_fontes/MBA/A.md": "s1"}
+    assert repo.ler("_fontes/MBA/A.md") == "# Olá"
+    vazio = RepositorioNotas("ghp_x", "r/r", cliente=httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(409))))
+    assert vazio.listar("_fontes") == {}
+
+
 def test_sem_claude_usa_a_ia_padrao(memoria):
     capturar(memoria, "a", tipo="conceito", texto="churn")
     memoria.ia_falsa.filtro = [aprovar(1, "Churn")]
@@ -563,3 +655,9 @@ def test_sql_da_tabela_ideias(conexao_real):
     assert [i.id for i in ideias.proximas(c, HOJE)] == [1]
     assert ideias.apagar(c, 2) and not ideias.apagar(c, 2)
     assert ideias.buscar(c, 2) is None
+
+    do_vault = Ideia(tipo="conceito", texto_original="RAG", criado_em=HOJE, origem="obsidian",
+                     fonte="_fontes/MBA/RAG.md", fonte_sha="abc")
+    ideias.salvar(c, do_vault)
+    assert list(ideias.por_fonte(c)) == ["_fontes/MBA/RAG.md"]
+    ideias.criar_tabela(c)  # rodar de novo (produção) não quebra: as colunas novas usam IF NOT EXISTS

@@ -63,6 +63,8 @@ class Ideia:
     caminho_nota: str = ""
     post_texto: str = ""
     publicado_em: date | None = None
+    fonte: str = ""             # caminho no GitHub quando veio do vault (ex.: _fontes/MBA/Overfitting.md)
+    fonte_sha: str = ""         # muda quando a nota original é editada
     id: int | None = None
 
     @property
@@ -95,15 +97,31 @@ CREATE TABLE IF NOT EXISTS ideias (
     data_prevista DATE,
     caminho_nota VARCHAR(300) NOT NULL DEFAULT '',
     post_texto TEXT NOT NULL DEFAULT '',
-    publicado_em DATE
+    publicado_em DATE,
+    fonte VARCHAR(300) NOT NULL DEFAULT '',
+    fonte_sha VARCHAR(64) NOT NULL DEFAULT ''
 );
 """
+
+# Colunas que chegaram depois da primeira versão (a tabela já existe em produção).
+SQL_NOVAS_COLUNAS = [
+    "ALTER TABLE ideias ADD COLUMN IF NOT EXISTS fonte VARCHAR(300) NOT NULL DEFAULT ''",
+    "ALTER TABLE ideias ADD COLUMN IF NOT EXISTS fonte_sha VARCHAR(64) NOT NULL DEFAULT ''",
+]
 
 
 # ---------------------------------------------------------------- Banco
 
 def criar_tabela(conexao) -> None:
     conexao.execute(SQL_TABELA)
+    for sql in SQL_NOVAS_COLUNAS:
+        conexao.execute(sql)
+
+
+def por_fonte(conexao) -> dict[str, Ideia]:
+    """Ideias que vieram do vault, indexadas pelo caminho da nota original."""
+    linhas = conexao.execute(f"SELECT id, {', '.join(COLUNAS)} FROM ideias WHERE fonte <> ''").fetchall()
+    return {i.fonte: i for i in map(_da_linha, linhas)}
 
 
 def _da_linha(linha) -> Ideia:
@@ -220,6 +238,27 @@ def caminho_da_nota(ideia: Ideia) -> str:
     return f"{_seguro(ideia.tema or 'Outros')}/{_seguro(ideia.nome)} ({ideia.id}).md"
 
 
+def nome_da_fonte(caminho: str) -> str:
+    """"_fontes/MBA/API, RAG e MCP.md" → "API, RAG e MCP" (o nome que o Obsidian usa nos links)."""
+    return caminho.rsplit("/", 1)[-1].removesuffix(".md")
+
+
+def ler_nota_do_vault(conteudo: str) -> tuple[dict[str, str], str]:
+    """Separa o frontmatter (só as linhas "chave: valor") do corpo da nota."""
+    texto = conteudo.lstrip("﻿")
+    if not texto.startswith("---"):
+        return {}, texto.strip()
+    fim = texto.find("\n---", 3)
+    if fim == -1:
+        return {}, texto.strip()
+    campos = {}
+    for linha in texto[3:fim].splitlines():
+        if ":" in linha and not linha.startswith((" ", "-")):
+            chave, valor = linha.split(":", 1)
+            campos[chave.strip().lower()] = valor.strip().strip('"').strip("'")
+    return campos, texto[fim + 4:].strip()
+
+
 def _etiqueta(texto: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", texto.lower().replace("ç", "c").replace("ã", "a").replace("é", "e")
                   .replace("á", "a").replace("ó", "o").replace("í", "i").replace("ú", "u")).strip("-")
@@ -247,9 +286,10 @@ def nota_markdown(ideia: Ideia) -> str:
         "---",
     ]
     original = "\n".join(f"> {linha}" if linha else ">" for linha in ideia.texto_original.splitlines())
-    corpo = [
-        f"# {ideia.nome}",
-        "",
+    corpo = [f"# {ideia.nome}", ""]
+    if ideia.fonte:
+        corpo += [f"Fonte: [[{nome_da_fonte(ideia.fonte)}]]", ""]
+    corpo += [
         "## Explicação breve",
         ideia.explicacao or "_(sem explicação)_",
         "",
