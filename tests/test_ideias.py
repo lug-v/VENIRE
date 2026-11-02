@@ -419,6 +419,32 @@ def test_filtro_com_erro_da_ia(memoria):
     assert memoria.memoria.ideias[1].status == "nova"
 
 
+def test_filtro_em_rodadas(memoria):
+    for n in range(1, 11):
+        capturar(memoria, "x", tipo="conceito", texto=f"conceito {n}")
+    memoria.ia_falsa.filtro = [aprovar(n, f"Conceito {n}") for n in range(1, 11)]
+    texto = processar_texto("/filtrar", memoria).texto
+    assert "✅ Aprovadas (10)" in texto and "⏳" not in texto
+    assert [len(p["novas"]) for p in memoria.ia_falsa.pedidos] == [8, 2]
+
+
+def test_segunda_rodada_falha_e_guarda_a_primeira(memoria):
+    for n in range(1, 11):
+        capturar(memoria, "x", tipo="conceito", texto=f"conceito {n}")
+    memoria.ia_falsa.filtro = [aprovar(n, f"Conceito {n}") for n in range(1, 11)]
+    original = memoria.ia_falsa.json
+
+    def limite_na_segunda(instrucoes, mensagem):
+        if memoria.ia_falsa.pedidos:
+            raise ErroIA("Groq respondeu 429: rate limit")
+        return original(instrucoes, mensagem)
+    memoria.ia_falsa.json = limite_na_segunda
+    texto = processar_texto("/filtrar", memoria).texto
+    assert "✅ Aprovadas (8)" in texto
+    assert "⏳ 2 ficaram para o próximo filtro (ou use /filtrar de novo)." in texto
+    assert sum(i.status == "nova" for i in memoria.memoria.ideias.values()) == 2
+
+
 def test_sem_claude_usa_a_ia_padrao(memoria):
     capturar(memoria, "a", tipo="conceito", texto="churn")
     memoria.ia_falsa.filtro = [aprovar(1, "Churn")]

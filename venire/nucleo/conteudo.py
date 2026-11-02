@@ -18,7 +18,8 @@ from venire.servicos.ideias import Ideia
 
 log = logging.getLogger("venire")
 
-LIMITE_FILTRO = 15        # ideias por rodada do filtro (o resto fica para a próxima)
+LIMITE_FILTRO = 8         # ideias por rodada (cabe na resposta do Groq grátis, com folga)
+RODADAS_FILTRO = 2        # rodadas por execução; o que sobrar fica para o próximo filtro
 LIMITE_CONTEXTO = 40      # ideias já aprovadas enviadas ao filtro, para achar repetidas
 
 Botoes = list[tuple[str, str]]
@@ -95,6 +96,7 @@ class ResultadoFiltro:
     sem_resposta: int = 0
     notas_gravadas: int = 0
     erro_notas: str = ""
+    restantes: int = 0          # ideias que continuam esperando o próximo filtro
 
 
 def _inteiro(valor) -> int | None:
@@ -200,6 +202,41 @@ def filtrar(deps, ids: list[int] | None = None, manter: bool = False) -> Resulta
     return resultado
 
 
+def filtrar_tudo(deps, rodadas: int = RODADAS_FILTRO) -> ResultadoFiltro | None:
+    """Roda o filtro em rodadas de LIMITE_FILTRO ideias.
+
+    Se uma rodada depois da primeira falhar (ex.: limite por minuto do Groq grátis),
+    guarda o que já foi feito; as ideias restantes continuam "nova" para a próxima vez.
+    """
+    total = None
+    for _ in range(rodadas):
+        try:
+            rodada = filtrar(deps)
+        except Exception:
+            if total is None:
+                raise
+            log.exception("Rodada extra do filtro falhou; o resto fica para a próxima")
+            break
+        if rodada is None:
+            break
+        if total is None:
+            total = rodada
+        else:
+            total.aprovadas += rodada.aprovadas
+            total.juntadas += rodada.juntadas
+            total.descartadas += rodada.descartadas
+            total.sem_resposta += rodada.sem_resposta
+            total.notas_gravadas += rodada.notas_gravadas
+            total.erro_notas = rodada.erro_notas or total.erro_notas
+        feitas = len(rodada.aprovadas) + len(rodada.juntadas) + len(rodada.descartadas)
+        if rodada.sem_resposta or feitas < LIMITE_FILTRO:
+            break
+    if total:
+        with deps.banco() as conexao:
+            total.restantes = ideias.contagem(conexao).get("nova", 0)
+    return total
+
+
 def texto_filtro(resultado: ResultadoFiltro | None, deps) -> tuple[str, Botoes]:
     if resultado is None:
         return "🧹 Nada novo para filtrar. Mande uma ideia, um conceito ou uma anotação.", []
@@ -216,8 +253,8 @@ def texto_filtro(resultado: ResultadoFiltro | None, deps) -> tuple[str, Botoes]:
     if resultado.descartadas:
         linhas += ["", f"🗑️ Descartadas ({len(resultado.descartadas)}):"]
         linhas += [f"• “{ideias.resumo(i.texto_original, 50)}” — {i.motivo}" for i in resultado.descartadas]
-    if resultado.sem_resposta:
-        linhas += ["", f"⏳ {resultado.sem_resposta} ficaram para o próximo filtro."]
+    if resultado.restantes:
+        linhas += ["", f"⏳ {resultado.restantes} ficaram para o próximo filtro (ou use /filtrar de novo)."]
     if resultado.notas_gravadas:
         plural = "nota gravada" if resultado.notas_gravadas == 1 else "notas gravadas"
         linhas += ["", f"🗂️ {resultado.notas_gravadas} {plural} no Obsidian."]
@@ -243,7 +280,7 @@ def recuperar(deps, ideia_id: int) -> tuple[str, Botoes]:
 
 def executar_filtro(deps, enviar: Callable[..., None]) -> dict:
     """Rota /cron/ideias (domingo às 20h). Não manda nada quando não há ideia nova."""
-    resultado = filtrar(deps)
+    resultado = filtrar_tudo(deps)
     if resultado is None:
         return {"enviados": 0, "filtradas": 0}
     texto, botoes = texto_filtro(resultado, deps)

@@ -293,7 +293,8 @@ Telegram (texto, áudio ou foto)
 
 ### Como ficou no código (02/11/2026)
 - `venire/servicos/ideias.py`: tabela `ideias`, calendário editorial (terças e quintas livres, maior potencial primeiro, data pedida respeitada) e a nota Markdown com frontmatter.
-- `venire/nucleo/conteudo.py`: filtro (até 15 ideias por rodada; as já aprovadas vão junto para achar repetidas), escrita do post, rotas agendadas e os botões do rascunho.
+- **Decisão (02/11/2026): rodar grátis, só com o Groq.** O Claude fica como opção paga (estimativa: US$ 0,01/mês com Haiku 5.5, US$ 0,22/mês com Sonnet 5.5).
+- `venire/nucleo/conteudo.py`: filtro em rodadas de 8 ideias, até 2 por execução, para caber no limite do Groq grátis; se a 2ª rodada bater no limite, a 1ª fica salva e o resto espera (as já aprovadas vão junto para achar repetidas), escrita do post, rotas agendadas e os botões do rascunho.
 - `venire/ia/claude.py`: cliente da API da Anthropic, com a mesma interface do Groq. **Sem `ANTHROPIC_API_KEY`, o filtro e os posts usam o Groq** (a alternativa grátis).
 - `venire/servicos/notas.py`: grava a nota no GitHub pela API (cria ou substitui).
 - Captura: "nota:", "conceito:" e "ideia:" no começo da mensagem são reconhecidos sem chamar a IA. Sem prefixo, a IA decide; na dúvida entre tarefa e ideia, pergunta com os botões 📝 Tarefa / 💡 Ideia. Foto de slide, quadro ou página vira anotação com o texto transcrito.

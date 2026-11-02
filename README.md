@@ -1,6 +1,6 @@
 # Venire
 
-Assessor pessoal no Telegram: agenda no Google Agenda, gastos e receitas com saldo do mês, resumo diário com clima e dólar, e um banco de ideias que vira nota no Obsidian e post no LinkedIn. Feito em Python, com custo zero (o Claude, opcional, custa centavos por mês).
+Assessor pessoal no Telegram: agenda no Google Agenda, gastos e receitas com saldo do mês, resumo diário com clima e dólar, e um banco de ideias que vira nota no Obsidian e post no LinkedIn. Feito em Python, com custo zero.
 
 Plano completo: [docs/PLANO.md](docs/PLANO.md)
 
@@ -157,12 +157,20 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 - **LinkedIn:** as aprovadas ganham uma data (terças e quintas livres, maior potencial primeiro). Na véspera a IA escreve o post; no dia, às 8h, o rascunho chega com ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar. A publicação é manual (copiar e colar).
 - **Acompanhar:** `/ideias` (contagem por status e últimas capturadas), `/linkedin` (próximos posts, com botão para trocar a data). O resumo das 6h30 mostra “📣 Post de hoje”.
 
+**Configuração usada: grátis, só com o Groq.** Não cadastre a `ANTHROPIC_API_KEY`; o filtro e os posts usam a mesma `GROQ_API_KEY` do resto. O filtro trabalha em rodadas de 8 ideias (até 2 por vez), para caber no limite do plano grátis; se sobrar algo, fica para o próximo domingo ou para um novo `/filtrar`.
+
 | Variável | Valor |
 |---|---|
-| `ANTHROPIC_API_KEY` (opcional) | console.anthropic.com → API Keys. Sem ela, o filtro e os posts usam o Groq, de graça |
-| `CLAUDE_MODEL` (opcional) | Modelo do Claude (padrão `claude-sonnet-5-5`) |
 | `GITHUB_TOKEN` | Token *fine-grained* com **Contents: Read and write** só no repositório das notas |
 | `OBSIDIAN_REPO` | `lug-v/venire-notas` |
+| `ANTHROPIC_API_KEY` (opcional, pago) | Só se um dia quiser o Claude. Com `CLAUDE_MODEL=claude-haiku-5-5`, custa cerca de US$ 0,01 por mês |
+
+### Obsidian no computador
+
+1. Clone o repositório das notas numa pasta e abra essa pasta como vault no Obsidian (ou clone dentro do vault que você já usa).
+2. Instale o plugin da comunidade **Git** (Obsidian Git) e ative.
+3. Nas opções do plugin, ligue **Pull on startup** e coloque **Auto pull interval** em 10 minutos.
+4. As notas chegam sozinhas sempre que o Obsidian estiver aberto. Não edite as notas do Venire no Obsidian: a próxima atualização do Venire sobrescreve o arquivo.
 
 No cron-job.org, crie mais 2 tarefas (fuso America/Sao_Paulo):
 

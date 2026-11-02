@@ -317,7 +317,7 @@ def perguntar_tarefa_ou_ideia(dados: dict, texto: str, deps: Dependencias, orige
 
 def rodar_filtro(deps: Dependencias) -> Resposta:
     try:
-        resultado = conteudo.filtrar(deps)
+        resultado = conteudo.filtrar_tudo(deps)
     except Exception as erro:
         log.exception("Falha no filtro de ideias")
         return Resposta(f"😕 Não consegui rodar o filtro agora. As ideias continuam guardadas.\nMotivo: {erro}")
