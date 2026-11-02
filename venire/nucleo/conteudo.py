@@ -19,7 +19,8 @@ from venire.servicos.ideias import Ideia
 log = logging.getLogger("venire")
 
 # Groq grátis: no máximo ~1.000 tokens de RESPOSTA por minuto. Cada ideia aprovada gera ~300 tokens,
-# então cada chamada leva 2 ideias e uma execução faz 1 chamada. O cron /cron/ideias roda de hora em hora.
+# então cada chamada leva 2 ideias e uma execução faz 1 chamada. O cron /cron/ideias roda 1 vez por dia
+# (2 ideias/dia = 14/semana, bem mais que os 2 posts semanais).
 LIMITE_FILTRO = 2         # ideias por chamada
 RODADAS_FILTRO = 1        # chamadas por execução (mais de uma estoura o limite por minuto)
 MAX_TOKENS_FILTRO = 800   # teto da resposta do filtro (abaixo dos 1.000 por minuto)
@@ -360,7 +361,7 @@ def texto_filtro(resultado: ResultadoFiltro | None, deps) -> tuple[str, Botoes]:
         linhas += ["", f"🗑️ Descartadas ({len(resultado.descartadas)}):"]
         linhas += [f"• “{ideias.resumo(i.texto_original, 50)}” — {i.motivo}" for i in resultado.descartadas]
     if resultado.restantes:
-        linhas += ["", f"⏳ {resultado.restantes} esperando: o filtro faz 2 por vez (limite do Groq grátis) e roda de novo em até 1 hora."]
+        linhas += ["", f"⏳ {resultado.restantes} esperando: o filtro faz 2 por vez (limite do Groq grátis) e roda de novo amanhã às 20h, ou use /filtrar."]
     if resultado.notas_gravadas:
         plural = "nota gravada" if resultado.notas_gravadas == 1 else "notas gravadas"
         linhas += ["", f"🗂️ {resultado.notas_gravadas} {plural} no Obsidian."]

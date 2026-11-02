@@ -262,7 +262,7 @@ Telegram (texto, áudio ou foto)
 - Resposta: "💡 Ideia guardada: ..." com o botão ↩️ Desfazer, no padrão das outras fases.
 
 ### 2. Filtro com o Claude
-- Quando: de hora em hora (`/cron/ideias`, 2 ideias por vez) ou na hora, pelo comando `/filtrar`. (Era domingo às 20h; mudou por causa do limite do Groq grátis.)
+- Quando: todo dia às 20h (`/cron/ideias`, 2 ideias por vez) ou na hora, pelo comando `/filtrar`. (Era domingo às 20h; mudou por causa do limite do Groq grátis: 2 por dia = 14 por semana, sobra para os 2 posts.)
 - O Claude (API da Anthropic) recebe as ideias com status `nova` e devolve JSON com, para cada uma:
   - decisão: `aprovada`, `juntar com #id` ou `descartada` (com o motivo);
   - tema (IA e Dados, Comercial B2B, Carreira, Automação, Outros);
