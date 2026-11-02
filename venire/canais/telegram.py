@@ -87,6 +87,9 @@ class Telegram:
             {"command": "contas", "description": "Contas fixas do mês e o que falta pagar"},
             {"command": "tarefas", "description": "Tarefas abertas"},
             {"command": "semana", "description": "Resumo dos gastos da semana"},
+            {"command": "ideias", "description": "Banco de ideias e conceitos"},
+            {"command": "filtrar", "description": "Filtrar as ideias novas agora"},
+            {"command": "linkedin", "description": "Próximos posts do LinkedIn"},
             {"command": "ajuda", "description": "Ver o que o Venire sabe fazer"},
         ])
         return self.chamar("getMe")

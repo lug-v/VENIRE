@@ -11,7 +11,7 @@ from typing import Callable
 
 from venire import envios
 from venire.datas import descrever, inicio_da_semana
-from venire.servicos import contas, eventos, financas, gastos, tarefas
+from venire.servicos import contas, eventos, financas, gastos, ideias, tarefas
 
 log = logging.getLogger("venire")
 
@@ -87,7 +87,7 @@ def resumo_do_dia(deps, dia: date, titulo: str, com_dolar_e_gastos: bool) -> str
 
     if com_dolar_e_gastos:
         for nome, montar in (("tarefas", tarefas.bloco_resumo), ("contas", contas.bloco_resumo),
-                             ("saldo do mês", financas.bloco_do_mes)):
+                             ("saldo do mês", financas.bloco_do_mes), ("post do dia", ideias.bloco_resumo)):
             try:
                 with deps.banco() as conexao:
                     bloco = montar(conexao, dia)

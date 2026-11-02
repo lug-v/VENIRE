@@ -9,7 +9,9 @@ Rotas:
   GET  /cron/lembretes        → aviso 1 hora antes (chamar a cada 5 minutos)
   GET  /cron/manha            → resumo das 6h30 (e da semana, às segundas)
   GET  /cron/noite            → compromissos de amanhã (21h)
-  POST /webhook               → recebe as mensagens e os cliques nos botões
+  GET  /cron/ideias           → filtro do banco de ideias (domingo, 20h)
+  GET  /cron/linkedin         → rascunho do post do dia (8h) e post de amanhã escrito na véspera
+  POST /webhook              → recebe as mensagens e os cliques nos botões
 """
 
 import hmac
@@ -26,11 +28,13 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from venire.banco import conectar  # noqa: E402
 from venire.canais.telegram import ErroTelegram, Telegram  # noqa: E402
 from venire.config import Config, carregar_config  # noqa: E402
+from venire.ia.claude import Claude  # noqa: E402
 from venire.ia.groq import Groq  # noqa: E402
 from venire.nucleo.respostas import (  # noqa: E402
     Dependencias, Resposta, processar_audio, processar_botao, processar_foto, processar_texto,
 )
-from venire.nucleo import automacoes  # noqa: E402
+from venire.nucleo import automacoes, conteudo  # noqa: E402
+from venire.servicos.notas import RepositorioNotas  # noqa: E402
 from venire.servicos.calendario import Calendario  # noqa: E402
 from venire.servicos.cambio import Cambio  # noqa: E402
 from venire.servicos.clima import Clima  # noqa: E402
@@ -52,7 +56,7 @@ def status():
     config = carregar_config()
     return {
         "app": "Venire",
-        "fase": 8,
+        "fase": 10,
         "telegram_configurado": bool(config.telegram_token),
         "senha_configurada": bool(config.venire_secret),
         "chat_autorizado": config.chat_id_autorizado is not None,
@@ -60,6 +64,8 @@ def status():
         "ia_configurada": bool(config.groq_api_key),
         "planilha_configurada": bool(config.google_conta_servico_json and config.google_planilha_id),
         "agenda_configurada": bool(config.google_conta_servico_json and config.google_agenda_id),
+        "claude_configurado": bool(config.anthropic_api_key),
+        "obsidian_configurado": bool(config.github_token and config.obsidian_repo),
     }
 
 
@@ -149,6 +155,10 @@ def montar_dependencias(config: Config) -> Dependencias:
         if tem_agenda else None,
         clima=lambda: Clima(config.latitude, config.longitude),
         cambio=lambda: Cambio(),
+        claude=(lambda: Claude(config.anthropic_api_key, config.claude_modelo))
+        if config.anthropic_api_key else None,
+        notas=(lambda: RepositorioNotas(config.github_token, config.obsidian_repo))
+        if config.github_token and config.obsidian_repo else None,
         cidade=config.cidade,
     )
 
@@ -211,6 +221,16 @@ def cron_manha(request: Request, chave: str = ""):
 @app.get("/cron/noite")
 def cron_noite(request: Request, chave: str = ""):
     return _executar_cron(request, chave, automacoes.executar_noite)
+
+
+@app.get("/cron/ideias")
+def cron_ideias(request: Request, chave: str = ""):
+    return _executar_cron(request, chave, conteudo.executar_filtro)
+
+
+@app.get("/cron/linkedin")
+def cron_linkedin(request: Request, chave: str = ""):
+    return _executar_cron(request, chave, conteudo.executar_linkedin)
 
 
 @app.post("/webhook")

@@ -1,6 +1,6 @@
 # Venire
 
-Assessor pessoal no Telegram: agenda no Google Agenda, gastos e receitas com saldo do mês, e resumo diário com clima e dólar. Feito em Python, com custo zero.
+Assessor pessoal no Telegram: agenda no Google Agenda, gastos e receitas com saldo do mês, resumo diário com clima e dólar, e um banco de ideias que vira nota no Obsidian e post no LinkedIn. Feito em Python, com custo zero (o Claude, opcional, custa centavos por mês).
 
 Plano completo: [docs/PLANO.md](docs/PLANO.md)
 
@@ -16,7 +16,7 @@ Plano completo: [docs/PLANO.md](docs/PLANO.md)
 - [x] Fase 7 — Receitas e saldo do mês (com projeção do fechamento)
 - [x] Fase 8 — Rotina e contas: recorrentes, contas fixas e tarefas
 - [ ] Fase 9 — Orçamentos e alertas
-- [ ] Fase 10 — Banco de ideias e conceitos: notas no Obsidian e posts no LinkedIn (**próxima**)
+- [x] Fase 10 — Banco de ideias e conceitos: notas no Obsidian e posts no LinkedIn (código pronto; falta configurar)
 
 ## Estrutura
 
@@ -29,11 +29,14 @@ venire/
 │   ├── banco.py              # conexão com o Neon
 │   ├── canais/telegram.py    # fala com a API do Telegram
 │   ├── ia/groq.py            # chamada à IA, sempre devolvendo JSON
+│   ├── ia/claude.py          # Claude (Anthropic): filtro de ideias e posts, mesma interface do Groq
 │   ├── pendencias.py         # pedidos que esperam um clique (conflito, escolher o dia)
 │   ├── repeticao.py          # "toda terça e quinta", "todo dia 10" → regra do Google Agenda
 │   ├── nucleo/
 │   │   ├── interpretador.py  # uma chamada à IA: gasto, evento ou outro + campos extraídos
-│   │   └── respostas.py      # decide o que fazer com cada mensagem (não depende do Telegram)
+│   │   ├── respostas.py      # decide o que fazer com cada mensagem (não depende do Telegram)
+│   │   ├── automacoes.py     # avisos e resumos agendados
+│   │   └── conteudo.py       # filtro de ideias, notas do Obsidian e posts do LinkedIn
 │   └── servicos/
 │       ├── google.py         # login do robô no Google e erros explicados
 │       ├── gastos.py         # interpretar, salvar, desfazer e resumir gastos
@@ -41,6 +44,8 @@ venire/
 │       ├── financas.py       # saldo do mês, projeção do fechamento e fechamento mensal
 │       ├── contas.py         # contas fixas, vencimentos e "já paguei"
 │       ├── tarefas.py        # tarefas sem horário
+│       ├── ideias.py         # banco de ideias, calendário de posts e nota Markdown
+│       ├── notas.py          # grava as notas no repositório do Obsidian (GitHub)
 │       ├── planilha.py       # cópia na Google Planilha (aba de gastos + aba Receitas)
 │       ├── eventos.py        # monta o compromisso e formata as respostas
 │       └── calendario.py     # Google Agenda: criar, apagar, listar e conflitos
@@ -143,6 +148,30 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 - **Contas fixas:** “aluguel 1450 todo dia 5”, “luz vence dia 10” (sem valor = valor variável). O resumo das 6h30 mostra as contas que vencem nos próximos 3 dias e as atrasadas; no dia do vencimento chega uma mensagem com o botão **✅ Já paguei**, que registra o gasto. Mandar “paguei o aluguel 1450” também marca a conta como paga. `/contas` mostra o mês, com botões.
 - **Tarefas:** “lembrar de comprar ração”, “anota: ligar pro contador”. Aparecem no resumo da manhã até você tocar nelas em `/tarefas`.
 - Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para /contas e /tarefas entrarem no menu.
+
+## Banco de ideias e conceitos (fase 10)
+
+- **Capturar:** “ideia: post sobre IA no comercial B2B”, “conceito: overfitting”, “nota: hoje entendi a diferença entre RAG e MCP”, “ideia para postar dia 20: …”. Também por áudio e por foto (slide, quadro, página de livro). Tem botão ↩️ Desfazer. Na dúvida entre tarefa e ideia, o Venire pergunta.
+- **Filtrar:** todo domingo às 20h (ou `/filtrar`), a IA aprova, junta repetidas ou descarta, e explica cada aprovada (tema, explicação breve, por que importa, exemplo, potencial de 0 a 10 e ângulo do post). O resumo traz o botão ♻️ Manter para desfazer um descarte.
+- **Obsidian:** cada aprovada vira um `.md` com frontmatter no repositório das notas; o plugin **Obsidian Git** puxa para o vault.
+- **LinkedIn:** as aprovadas ganham uma data (terças e quintas livres, maior potencial primeiro). Na véspera a IA escreve o post; no dia, às 8h, o rascunho chega com ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar. A publicação é manual (copiar e colar).
+- **Acompanhar:** `/ideias` (contagem por status e últimas capturadas), `/linkedin` (próximos posts, com botão para trocar a data). O resumo das 6h30 mostra “📣 Post de hoje”.
+
+| Variável | Valor |
+|---|---|
+| `ANTHROPIC_API_KEY` (opcional) | console.anthropic.com → API Keys. Sem ela, o filtro e os posts usam o Groq, de graça |
+| `CLAUDE_MODEL` (opcional) | Modelo do Claude (padrão `claude-sonnet-5-5`) |
+| `GITHUB_TOKEN` | Token *fine-grained* com **Contents: Read and write** só no repositório das notas |
+| `OBSIDIAN_REPO` | `lug-v/venire-notas` |
+
+No cron-job.org, crie mais 2 tarefas (fuso America/Sao_Paulo):
+
+| Título | URL | Agendamento |
+|---|---|---|
+| Venire – ideias | `https://SEU-PROJETO.vercel.app/cron/ideias?chave=SUA_SENHA` | Domingo às 20:00 |
+| Venire – LinkedIn | `https://SEU-PROJETO.vercel.app/cron/linkedin?chave=SUA_SENHA` | Todo dia às 08:00 |
+
+Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para /ideias, /filtrar e /linkedin entrarem no menu.
 
 ## Rodar no seu computador
 

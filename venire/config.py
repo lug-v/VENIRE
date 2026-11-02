@@ -42,6 +42,10 @@ class Config:
     cidade: str = "Bento Gonçalves"
     latitude: float = -29.1714
     longitude: float = -51.5192
+    anthropic_api_key: str = ""
+    claude_modelo: str = "claude-sonnet-5-5"
+    github_token: str = ""
+    obsidian_repo: str = ""
 
     @property
     def segredo_webhook(self) -> str:
@@ -67,6 +71,10 @@ def carregar_config() -> Config:
         cidade=os.getenv("CIDADE", "").strip() or "Bento Gonçalves",
         latitude=_numero(os.getenv("LATITUDE"), -29.1714),
         longitude=_numero(os.getenv("LONGITUDE"), -51.5192),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        claude_modelo=os.getenv("CLAUDE_MODEL", "").strip() or "claude-sonnet-5-5",
+        github_token=os.getenv("GITHUB_TOKEN", "").strip(),
+        obsidian_repo=os.getenv("OBSIDIAN_REPO", "").strip(),
     )
 
 

@@ -3,6 +3,8 @@
 A IA só EXTRAI o que foi dito. Datas, horas e validações são calculadas em Python.
 """
 
+import re
+
 from venire.servicos.gastos import CATEGORIAS, PAGAMENTOS
 from venire.servicos.receitas import CATEGORIAS_RECEITA
 
@@ -15,9 +17,15 @@ compromisso, inclusive os que se repetem: "toda terça e quinta Muay Thai às 19
 CONTA FIXA que vence todo mês: "aluguel 1450 todo dia 5", "conta de luz vence dia 10", "internet 99,90 todo
 mês dia 15"), "tarefa" (algo a fazer SEM data nem hora: "lembrar de comprar ração", "anota: ligar pro
 contador", "preciso renovar a CNH"), "eventos" (a mensagem traz uma LISTA de dois ou mais compromissos
-com datas, como um cronograma de aulas ou uma agenda colada) ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
+com datas, como um cronograma de aulas ou uma agenda colada), "anotacao" (registro de algo aprendido ou
+pensado: "nota: hoje entendi a diferença entre RAG e MCP", "aprendi na aula que..."), "conceito" (um termo
+para aprender ou explicar: "conceito: overfitting", "o que é churn?" dito como algo a estudar), "ideia" (algo
+para criar ou postar: "ideia: post sobre usar IA no comercial B2B", "ideia para postar dia 20: ..."),
+"tarefa_ou_ideia" (dá para entender como tarefa OU como ideia e não há pista clara, ex.: "escrever sobre
+funil de vendas") ou "outro" (qualquer outra coisa: pergunta, conversa, pedido de consulta).
 "paguei o aluguel 1450" é gasto (já pagou), não conta. "me lembra de ligar pro João amanhã às 9" é evento
-(tem data/hora), não tarefa.
+(tem data/hora), não tarefa. "anota: ligar pro contador" é tarefa (algo a fazer); "nota: ..." com algo
+aprendido é anotacao.
 
 Se tipo = "gasto":
 - "valor": número em reais (ex.: 15, 249.9). Aceite "15 reais", "R$ 15", "15,50", "1.200". Nunca invente.
@@ -70,8 +78,28 @@ Se tipo = "eventos":
 Se tipo = "tarefa":
 - "texto": o que precisa ser feito, curto, começando por verbo ("comprar ração", "ligar pro contador").
 
+Se tipo = "anotacao", "conceito", "ideia" ou "tarefa_ou_ideia":
+- "texto": o conteúdo completo, sem o prefixo ("nota:", "conceito:", "ideia:") e sem a data do post.
+  Não resuma nem corrija: copie o que foi dito.
+- "data_post_texto": se a ideia diz quando postar ("para postar dia 20", "post na quinta"), a expressão
+  EXATAMENTE como foi dita ("dia 20", "quinta"); senão "".
+
 NUNCA calcule datas nem converta horas: copie as expressões como o usuário escreveu.
 "confianca": de 0 a 1."""
+
+
+PREFIXO_IDEIA = re.compile(r"^\s*(nota|anota[cç][aã]o|conceito|ideia)\s*[:–-]\s*(\S.*)$", re.IGNORECASE | re.DOTALL)
+TIPO_DO_PREFIXO = {"nota": "anotacao", "conceito": "conceito", "ideia": "ideia"}
+
+
+def prefixo_de_ideia(texto: str) -> dict | None:
+    """"nota: ...", "conceito: ...", "ideia: ..." não precisam da IA para saber o tipo."""
+    achado = PREFIXO_IDEIA.match(texto or "")
+    if not achado:
+        return None
+    palavra = achado.group(1).lower()
+    tipo = TIPO_DO_PREFIXO.get(palavra, "anotacao")
+    return {"tipo": tipo, "texto": achado.group(2).strip(), "data_post_texto": ""}
 
 
 def interpretar(texto: str, ia) -> dict:
@@ -89,6 +117,8 @@ INSTRUCOES_FOTO = f"""Você analisa uma foto enviada ao Venire, assessor pessoal
   Num comprovante de Pix, se a legenda ou o texto indicar "recebido"/"você recebeu", é receita; se indicar
   "enviado"/"você pagou", é gasto. Na dúvida, use a legenda; sem legenda, considere gasto.
 - "eventos": a foto mostra compromissos (convite, cartaz de evento, agenda escrita, print de conversa marcando algo).
+- "anotacao": conteúdo de estudo ou trabalho para guardar (slide de aula, quadro, página de livro, anotação
+  à mão, print de artigo). Se a legenda disser "conceito" ou "ideia", use "conceito" ou "ideia".
 - "outro": qualquer outra coisa.
 
 Se tipo = "gasto":
@@ -107,6 +137,10 @@ Se tipo = "eventos":
 - "eventos": lista com no máximo 25 compromissos, cada um com "titulo", "data_texto" (como aparece:
   "15/10", "sexta", "20 de novembro"), "hora_texto", "hora_fim_texto", "local" e "detalhes" (outras
   informações úteis, como professor ou observação). Use "" quando faltar algo.
+
+Se tipo = "anotacao", "conceito" ou "ideia":
+- "texto": transcreva o conteúdo principal da imagem (título, tópicos, definições), fiel e organizado,
+  com no máximo 1.500 caracteres. Inclua a legenda no começo, se houver.
 
 Use a legenda, se houver, como contexto. NUNCA invente valores, datas ou horários que não estejam visíveis."""
 

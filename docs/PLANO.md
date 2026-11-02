@@ -203,7 +203,8 @@ Considerando hoje = terça, 13/10/2026:
   - Agendador: cron-job.org com 3 tarefas (fuso America/Sao_Paulo): `/cron/lembretes` a cada 5 min, `/cron/manha` às 06:30 e `/cron/noite` às 21:00, todas com `?chave=VENIRE_SECRET`.
   - Tabela `envios` garante envio único e nova tentativa se o Telegram falhar. Variáveis opcionais: `CIDADE`, `LATITUDE`, `LONGITUDE` (padrão Bento Gonçalves).
   - Ficou de fora, por escolha: projeção de gastos do fim do mês (pode entrar na fase 7 ou 8).
-- **Próxima:** fase 10 — banco de ideias e conceitos (seção 11). As fases 5 e 9 continuam no plano, para depois.
+- **Fase 10 — código pronto (02/11/2026):** banco de ideias e conceitos (seção 11). Falta cadastrar as variáveis na Vercel, criar o repositório `lug-v/venire-notas` e as tarefas `/cron/ideias` e `/cron/linkedin` no cron-job.org.
+- **Próxima:** fases 5 e 9, que continuam no plano.
 
 ## 10. Novas funções pedidas (18/10/2026) e nova ordem das fases
 
@@ -214,7 +215,7 @@ Considerando hoje = terça, 13/10/2026:
 | 7 | **Receitas e saldo do mês** (inclui a projeção do fim do mês) | ✅ concluída (18/10/2026) |
 | 8 | **Rotina e contas**: compromissos recorrentes, contas fixas com vencimento, lista de tarefas | ✅ concluída (18/10/2026) |
 | 9 | Orçamentos por categoria e alertas de gasto fora do padrão (antiga fase 7) | a fazer |
-| 10 | **Banco de ideias e conceitos**: captura no Telegram, filtro com o Claude, nota no Obsidian e post no LinkedIn na data prevista | **próxima** |
+| 10 | **Banco de ideias e conceitos**: captura no Telegram, filtro com o Claude, nota no Obsidian e post no LinkedIn na data prevista | ✅ código pronto (02/11/2026), falta configurar |
 
 ### Fase 7 — Receitas e saldo ✅
 - Registrar ganhos por texto, áudio ou foto (comprovante de Pix recebido): "ganhei 2000 reais", "recebi 50 reais", "caiu o salário de 3.500", "comissão de 800".
@@ -282,13 +283,24 @@ Telegram (texto, áudio ou foto)
 - A publicação é manual: a API do LinkedIn não libera postagem em perfil pessoal para apps simples. Copiar e colar leva 10 segundos.
 
 ### 5. Administração
-- Status de cada ideia: `nova` → `aprovada` → `nota_criada` → `agendada` → `publicada` (ou `descartada`).
+- Status de cada ideia: `nova` → `aprovada` → `agendada` → `publicada` (ou `descartada`). A nota é criada na aprovação e atualizada a cada mudança (post escrito, data trocada, publicado); o campo `caminho_nota` diz se ela existe.
 - `/ideias`: quantas há em cada status e as últimas capturadas.
 - `/linkedin`: os próximos posts e as datas; botão para trocar a data.
 - O resumo das 6h30 ganha a linha "📣 Post de hoje: ..." quando houver.
 
 ### Banco de dados
-- `ideias`: id, tipo (anotação/conceito/ideia), texto_original, origem (texto/áudio/foto), criado_em, status, tema, explicacao, potencial, data_prevista, caminho_nota, post_texto, publicado_em.
+- `ideias`: id, tipo (anotação/conceito/ideia), texto_original, origem (texto/áudio/foto), criado_em, status, titulo, tema, explicacao, por_que_importa, exemplo, angulo, potencial, motivo (do descarte), data_prevista, caminho_nota, post_texto, publicado_em.
+
+### Como ficou no código (02/11/2026)
+- `venire/servicos/ideias.py`: tabela `ideias`, calendário editorial (terças e quintas livres, maior potencial primeiro, data pedida respeitada) e a nota Markdown com frontmatter.
+- `venire/nucleo/conteudo.py`: filtro (até 15 ideias por rodada; as já aprovadas vão junto para achar repetidas), escrita do post, rotas agendadas e os botões do rascunho.
+- `venire/ia/claude.py`: cliente da API da Anthropic, com a mesma interface do Groq. **Sem `ANTHROPIC_API_KEY`, o filtro e os posts usam o Groq** (a alternativa grátis).
+- `venire/servicos/notas.py`: grava a nota no GitHub pela API (cria ou substitui).
+- Captura: "nota:", "conceito:" e "ideia:" no começo da mensagem são reconhecidos sem chamar a IA. Sem prefixo, a IA decide; na dúvida entre tarefa e ideia, pergunta com os botões 📝 Tarefa / 💡 Ideia. Foto de slide, quadro ou página vira anotação com o texto transcrito.
+- Botões: ↩️ Desfazer na captura; ♻️ Manter no resumo do filtro (a ideia volta e é aprovada); ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar no rascunho; em `/linkedin`, um botão por post para trocar a data (mostra as próximas 4 terças e quintas livres).
+- `/cron/linkedin` roda todo dia às 8h: entrega o rascunho dos posts de hoje e escreve os de amanhã (a véspera). Se a véspera falhar, o post é escrito na hora.
+- Ideia juntada a outra já aprovada: o texto entra na ideia antiga e a nota dela é atualizada.
+- Ficou de fora: editar o texto do post à mão pelo Telegram (hoje: ✏️ Reescrever pede uma nova versão à IA).
 
 ### Variáveis novas
 | Nome | Valor |

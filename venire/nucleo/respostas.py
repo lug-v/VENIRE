@@ -13,10 +13,10 @@ from typing import Callable
 
 from venire import pendencias
 from venire.config import FUSO
-from venire.datas import data_ja_passou, descrever, hoje, hora_atual
-from venire.nucleo import automacoes
-from venire.nucleo.interpretador import interpretar, interpretar_foto
-from venire.servicos import contas, eventos, financas, gastos, receitas, tarefas
+from venire.datas import data_do_evento, data_ja_passou, descrever, hoje, hora_atual
+from venire.nucleo import automacoes, conteudo
+from venire.nucleo.interpretador import interpretar, interpretar_foto, prefixo_de_ideia
+from venire.servicos import contas, eventos, financas, gastos, ideias, receitas, tarefas
 from venire.servicos.eventos import Evento
 
 log = logging.getLogger("venire")
@@ -43,6 +43,11 @@ AJUDA = (
     "• aluguel 1450 todo dia 5 (conta fixa)\n"
     "• lembrar de comprar ração (tarefa)\n"
     "Veja com /contas e /tarefas\n\n"
+    "💡 Ideias e conceitos\n"
+    "• ideia: post sobre IA no comercial B2B\n"
+    "• conceito: overfitting\n"
+    "• nota: hoje entendi a diferença entre RAG e MCP\n"
+    "Viram nota no Obsidian e post no LinkedIn. Veja com /ideias, /filtrar e /linkedin\n\n"
     "🎙️ Áudio: fale do mesmo jeito que escreveria.\n"
     "📸 Foto: mande a nota fiscal, o comprovante do Pix ou um convite.\n\n"
     "⏰ Automático: aviso 1 hora antes de cada compromisso, resumo às 6h30 (clima, dólar, agenda, contas, tarefas e saldo), "
@@ -64,6 +69,8 @@ class Dependencias:
     calendario: Callable[[], object] | None = None
     clima: Callable[[], object] | None = None
     cambio: Callable[[], object] | None = None
+    claude: Callable[[], object] | None = None   # filtro de ideias e posts (sem ele, usa a ia)
+    notas: Callable[[], object] | None = None    # repositório das notas do Obsidian
     cidade: str = "Bento Gonçalves"
     hoje: Callable[[], date] = hoje
     hora_atual: Callable[[], time] = hora_atual
@@ -100,13 +107,24 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
     if comando == "/amanha":
         dia = deps.hoje() + timedelta(days=1)
         return Resposta(automacoes.resumo_do_dia(deps, dia, automacoes.titulo_noite(dia), com_dolar_e_gastos=False))
+    if comando == "/ideias":
+        with deps.banco() as conexao:
+            return Resposta(ideias.texto_ideias(conexao))
+    if comando == "/filtrar":
+        return rodar_filtro(deps)
+    if comando == "/linkedin":
+        return mostrar_linkedin(deps)
     if comando:
         return Resposta("Não conheço esse comando. Use /ajuda para ver o que eu sei fazer.")
     if not texto:
         return Resposta("Me mande um texto, um áudio ou uma foto. 🙂")
 
-    dados = interpretar(texto, deps.ia())
-    tipo = dados.get("tipo")
+    dados = prefixo_de_ideia(texto) or interpretar(texto, deps.ia())
+    tipo = ideias.normalizar_tipo(dados.get("tipo"))
+    if tipo in ideias.TIPOS:
+        return guardar_ideia(dados, tipo, texto, deps, origem)
+    if tipo == "tarefa_ou_ideia":
+        return perguntar_tarefa_ou_ideia(dados, texto, deps, origem)
     if tipo == "gasto":
         return registrar_gasto(dados, texto, deps, origem)
     if tipo == "receita":
@@ -126,7 +144,7 @@ def processar_texto(texto: str, deps: Dependencias, nome: str = "", origem: str 
     saudacao = f", {nome}" if nome else ""
     return Resposta(
         f"Ainda não sei fazer isso{saudacao}. 🙂\n"
-        "Eu registro gastos e receitas, agendo compromissos, cadastro contas fixas e anoto tarefas. "
+        "Eu registro gastos e receitas, agendo compromissos, cadastro contas fixas, anoto tarefas e guardo ideias. "
         "Perguntas livres chegam numa próxima fase. Use /ajuda para ver exemplos."
     )
 
@@ -151,6 +169,11 @@ def processar_foto(imagem: bytes, tipo: str, legenda: str, deps: Dependencias) -
         return [resposta]
     if dados.get("tipo") == "receita":
         resposta = registrar_receita(dados, origem_texto, deps, origem="foto")
+        resposta.texto = "📸 " + resposta.texto
+        return [resposta]
+    tipo_foto = ideias.normalizar_tipo(dados.get("tipo"))
+    if tipo_foto in ideias.TIPOS and str(dados.get("texto") or "").strip():
+        resposta = guardar_ideia(dados, tipo_foto, origem_texto, deps, origem="foto")
         resposta.texto = "📸 " + resposta.texto
         return [resposta]
     if dados.get("tipo") == "eventos":
@@ -263,6 +286,49 @@ def mostrar_tarefas(deps: Dependencias, aviso: str = "") -> Resposta:
     if aviso:
         texto = f"{aviso}\n\n{texto}"
     return Resposta(texto, [(f"✅ {t[:40]}", f"tf:{i}") for i, t in abertas])
+
+
+# ---------------------------------------------------------------- Ideias e conceitos (fase 10)
+
+def guardar_ideia(dados: dict, tipo: str, texto: str, deps: Dependencias, origem: str = "texto") -> Resposta:
+    conteudo_ideia = str(dados.get("texto") or texto).strip()
+    if not conteudo_ideia:
+        return Resposta("💡 Não entendi o que guardar. Tente “ideia: post sobre IA no comercial”.")
+    ideia = ideias.Ideia(tipo=tipo, texto_original=conteudo_ideia, origem=origem, criado_em=deps.hoje())
+    data_post = str(dados.get("data_post_texto") or "").strip()
+    if data_post:
+        escolhida = data_do_evento(data_post, deps.hoje())
+        if escolhida and escolhida.opcoes:
+            ideia.data_prevista = escolhida.opcoes[-1]  # "quinta" sendo hoje = a da semana que vem
+    with deps.banco() as conexao:
+        ideias.salvar(conexao, ideia)
+        esperando = ideias.contagem(conexao).get("nova", 0)
+    return Resposta(ideias.confirmacao_captura(ideia, esperando, deps.hoje()),
+                    [("↩️ Desfazer", f"ix:{ideia.id}")])
+
+
+def perguntar_tarefa_ou_ideia(dados: dict, texto: str, deps: Dependencias, origem: str) -> Resposta:
+    conteudo_ideia = str(dados.get("texto") or texto).strip()
+    with deps.banco() as conexao:
+        pid = pendencias.guardar(conexao, "tarefa_ou_ideia", {"texto": conteudo_ideia, "origem": origem})
+    return Resposta(f"🤔 “{ideias.resumo(conteudo_ideia, 80)}” é uma tarefa ou uma ideia?",
+                    [("📝 Tarefa", f"ti:{pid}:t"), ("💡 Ideia", f"ti:{pid}:i")])
+
+
+def rodar_filtro(deps: Dependencias) -> Resposta:
+    try:
+        resultado = conteudo.filtrar(deps)
+    except Exception as erro:
+        log.exception("Falha no filtro de ideias")
+        return Resposta(f"😕 Não consegui rodar o filtro agora. As ideias continuam guardadas.\nMotivo: {erro}")
+    return Resposta(*conteudo.texto_filtro(resultado, deps))
+
+
+def mostrar_linkedin(deps: Dependencias) -> Resposta:
+    with deps.banco() as conexao:
+        proximos = ideias.proximas(conexao, deps.hoje())
+    return Resposta(ideias.texto_linkedin(proximos),
+                    [(f"📅 {i.data_prevista:%d/%m} · {i.nome[:30]}", f"lt:{i.id}") for i in proximos])
 
 
 def agendar_pedido(dados: dict, texto: str, deps: Dependencias) -> Resposta:
@@ -415,6 +481,9 @@ def processar_botao(dado: str, deps: Dependencias) -> Resposta:
             apagada = tarefas.apagar(conexao, resto)
         return Resposta("↩️ Tarefa removida." if apagada else "Essa tarefa já tinha sido removida.")
 
+    if acao in BOTOES_IDEIAS and resto:
+        return botao_de_ideia(acao, resto, deps)
+
     if acao == "dr" and resto:
         with deps.banco() as conexao:
             apagada = receitas.apagar(conexao, resto)
@@ -466,6 +535,55 @@ def processar_botao(dado: str, deps: Dependencias) -> Resposta:
             evento.data = date.fromisoformat(dados["opcoes"][int(indice or 0)])
             return agendar(evento, deps)
 
+    return Resposta("Botão desconhecido.")
+
+
+BOTOES_IDEIAS = {"ix", "ti", "ir", "lp", "lr", "la", "ld", "lt", "lq"}
+
+
+def botao_de_ideia(acao: str, resto: str, deps: Dependencias) -> Resposta:
+    """ix desfazer · ti tarefa ou ideia · ir manter descartada · lp publiquei · lr reescrever ·
+    la adiar · ld descartar · lt trocar data (opções) · lq trocar para a data escolhida."""
+    if acao == "ti":
+        pid, _, escolha = resto.partition(":")
+        with deps.banco() as conexao:
+            pendencia = pendencias.retirar(conexao, pid)
+        if pendencia is None:
+            return Resposta("Esse pedido expirou ou já foi respondido.")
+        dados = pendencia[1]
+        if escolha == "t":
+            return anotar_tarefa({"texto": dados.get("texto", "")}, dados.get("texto", ""), deps)
+        return guardar_ideia({"texto": dados.get("texto", "")}, "ideia", dados.get("texto", ""), deps,
+                             dados.get("origem", "texto"))
+
+    numero, _, extra = resto.partition(":")
+    if not numero.isdigit():
+        return Resposta("Botão desconhecido.")
+    ideia_id = int(numero)
+
+    if acao == "ix":
+        with deps.banco() as conexao:
+            apagada = ideias.apagar(conexao, ideia_id)
+        return Resposta("↩️ Removida do banco de ideias." if apagada else "Essa ideia já tinha sido removida.")
+
+    try:
+        if acao == "ir":
+            return Resposta(*conteudo.recuperar(deps, ideia_id))
+        if acao == "lp":
+            return Resposta(*conteudo.publicar(deps, ideia_id))
+        if acao == "lr":
+            return Resposta(*conteudo.reescrever(deps, ideia_id))
+        if acao == "la":
+            return Resposta(*conteudo.mudar_data(deps, ideia_id, adiar_dias=7))
+        if acao == "ld":
+            return Resposta(*conteudo.descartar(deps, ideia_id))
+        if acao == "lt":
+            return Resposta(*conteudo.opcoes_de_data(deps, ideia_id))
+        if acao == "lq":
+            return Resposta(*conteudo.mudar_data(deps, ideia_id, nova_data=date.fromisoformat(extra)))
+    except Exception as erro:
+        log.exception("Falha no botão do banco de ideias")
+        return Resposta(f"😕 Não consegui fazer isso agora.\nMotivo: {erro}")
     return Resposta("Botão desconhecido.")
 
 

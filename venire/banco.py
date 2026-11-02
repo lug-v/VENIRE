@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import psycopg
 
 from venire import envios, pendencias
-from venire.servicos import contas, gastos, receitas, tarefas
+from venire.servicos import contas, gastos, ideias, receitas, tarefas
 
 _tabelas_prontas = False
 
@@ -24,6 +24,7 @@ def conectar(database_url: str):
             receitas.criar_tabela(conexao)
             contas.criar_tabela(conexao)
             tarefas.criar_tabela(conexao)
+            ideias.criar_tabela(conexao)
             _tabelas_prontas = True
         yield conexao
         conexao.commit()

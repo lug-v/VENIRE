@@ -220,4 +220,4 @@ def test_rotas_cron_exigem_chave(monkeypatch):
     assert cliente.get("/cron/noite?chave=senha").json() == {"ok": True, "enviados": 1}
     assert cliente.get("/cron/noite", headers={"Authorization": "Bearer senha"}).status_code == 200
     assert len(chamadas) == 2
-    assert json.loads(json.dumps(cliente.get("/").json()))["fase"] == 8
+    assert json.loads(json.dumps(cliente.get("/").json()))["fase"] == 10
