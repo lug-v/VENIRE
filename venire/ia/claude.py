@@ -51,5 +51,5 @@ class Claude:
         blocos = resposta.json().get("content", [])
         return "".join(b.get("text", "") for b in blocos if b.get("type") == "text").strip()
 
-    def json(self, instrucoes: str, mensagem: str) -> dict:
-        return extrair_json(self.texto(instrucoes, mensagem, max_tokens=8000))
+    def json(self, instrucoes: str, mensagem: str, max_tokens: int = 8000) -> dict:
+        return extrair_json(self.texto(instrucoes, mensagem, max_tokens=max_tokens))

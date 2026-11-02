@@ -18,11 +18,15 @@ from venire.servicos.ideias import Ideia
 
 log = logging.getLogger("venire")
 
-LIMITE_FILTRO = 8         # ideias por rodada (cabe na resposta do Groq grátis, com folga)
-RODADAS_FILTRO = 2        # rodadas por execução; o que sobrar fica para o próximo filtro
+# Groq grátis: no máximo ~1.000 tokens de RESPOSTA por minuto. Cada ideia aprovada gera ~300 tokens,
+# então cada chamada leva 2 ideias e uma execução faz 1 chamada. O cron /cron/ideias roda de hora em hora.
+LIMITE_FILTRO = 2         # ideias por chamada
+RODADAS_FILTRO = 1        # chamadas por execução (mais de uma estoura o limite por minuto)
+MAX_TOKENS_FILTRO = 800   # teto da resposta do filtro (abaixo dos 1.000 por minuto)
+MAX_TOKENS_POST = 900     # teto da resposta do post (~1.300 caracteres + JSON)
 LIMITE_CONTEXTO = 40      # ideias já aprovadas enviadas ao filtro, para achar repetidas
 PASTA_FONTES = "_fontes"  # cópia dos conceitos do vault, enviada pela tarefa do Windows
-TEXTO_NO_FILTRO = 1500    # caracteres de cada ideia enviados ao filtro (o limite do Groq grátis é por minuto)
+TEXTO_NO_FILTRO = 800     # caracteres de cada ideia enviados ao filtro (o limite do Groq grátis é por minuto)
 TEXTO_NO_POST = 3000
 
 Botoes = list[tuple[str, str]]
@@ -47,7 +51,7 @@ Responda APENAS um JSON: {{"ideias": [ ... ]}}, com um item para CADA id de "nov
 Só para "aprovada":
 - "titulo": nome curto da nota, até 60 caracteres, sem emoji.
 - "tema": exatamente um de: {", ".join(ideias.TEMAS)}.
-- "explicacao": explicação breve do conceito em 3 a 5 linhas, linguagem simples. Se o texto já explica,
+- "explicacao": explicação breve do conceito em 3 ou 4 linhas, linguagem simples. Se o texto já explica,
   organize e complete; se é só um termo ("conceito: overfitting"), explique o que ele significa.
 - "por_que_importa": 1 ou 2 frases.
 - "exemplo": um exemplo prático, de preferência do mundo comercial ou de dados.
@@ -179,7 +183,8 @@ def filtrar(deps, ids: list[int] | None = None, manter: bool = False) -> Resulta
         "ja_aprovadas": [{"id": i.id, "titulo": i.nome} for i in anteriores],
         "manter": [i.id for i in novas] if manter else [],
     }
-    resposta = _ia_conteudo(deps).json(INSTRUCOES_FILTRO, json.dumps(entrada, ensure_ascii=False))
+    resposta = _ia_conteudo(deps).json(INSTRUCOES_FILTRO, json.dumps(entrada, ensure_ascii=False),
+                                       max_tokens=MAX_TOKENS_FILTRO)
     resultado = decidir(novas, resposta.get("ideias") or [], {i.id for i in anteriores},
                         {i.id for i in novas} if manter else set())
 
@@ -278,13 +283,13 @@ def importar_fontes(deps) -> tuple[int, int, str]:
     return novas, atualizadas, ""
 
 
-def filtrar_tudo(deps, rodadas: int = RODADAS_FILTRO) -> ResultadoFiltro | None:
+def filtrar_tudo(deps, rodadas: int | None = None) -> ResultadoFiltro | None:
     """Importa os conceitos do vault e roda o filtro com trava (uma execução por vez)."""
     with deps.banco() as conexao:
         if not envios.reservar_trava(conexao, TRAVA_FILTRO):
             raise FiltroOcupado()
     try:
-        return _filtrar_tudo(deps, rodadas)
+        return _filtrar_tudo(deps, RODADAS_FILTRO if rodadas is None else rodadas)
     finally:
         with deps.banco() as conexao:
             envios.liberar(conexao, TRAVA_FILTRO)
@@ -355,7 +360,7 @@ def texto_filtro(resultado: ResultadoFiltro | None, deps) -> tuple[str, Botoes]:
         linhas += ["", f"🗑️ Descartadas ({len(resultado.descartadas)}):"]
         linhas += [f"• “{ideias.resumo(i.texto_original, 50)}” — {i.motivo}" for i in resultado.descartadas]
     if resultado.restantes:
-        linhas += ["", f"⏳ {resultado.restantes} ficaram para o próximo filtro (ou use /filtrar de novo)."]
+        linhas += ["", f"⏳ {resultado.restantes} esperando: o filtro faz 2 por vez (limite do Groq grátis) e roda de novo em até 1 hora."]
     if resultado.notas_gravadas:
         plural = "nota gravada" if resultado.notas_gravadas == 1 else "notas gravadas"
         linhas += ["", f"🗂️ {resultado.notas_gravadas} {plural} no Obsidian."]
@@ -404,7 +409,8 @@ def escrever_post(deps, ideia: Ideia, anterior: str = "") -> str:
     if anterior:
         entrada["versao_anterior"] = anterior
         entrada["pedido"] = "Escreva uma versão diferente: outro gancho e outra estrutura."
-    resposta = _ia_conteudo(deps).json(INSTRUCOES_POST, json.dumps(entrada, ensure_ascii=False))
+    resposta = _ia_conteudo(deps).json(INSTRUCOES_POST, json.dumps(entrada, ensure_ascii=False),
+                                       max_tokens=MAX_TOKENS_POST)
     post = str(resposta.get("post") or "").strip()
     if not post:
         raise ValueError("A IA não devolveu o texto do post.")

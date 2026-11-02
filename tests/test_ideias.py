@@ -256,9 +256,10 @@ class IAFalsa:
     """Responde o interpretador, o filtro e o escritor de posts."""
 
     def __init__(self):
-        self.interpretacao, self.filtro, self.posts, self.pedidos = {}, [], [], []
+        self.interpretacao, self.filtro, self.posts, self.pedidos, self.tetos = {}, [], [], [], []
 
-    def json(self, instrucoes, mensagem):
+    def json(self, instrucoes, mensagem, max_tokens=None):
+        self.tetos.append(max_tokens)
         if instrucoes is conteudo.INSTRUCOES_FILTRO:
             self.pedidos.append(json.loads(mensagem))
             return {"ideias": self.filtro}
@@ -290,6 +291,9 @@ class NotasFalsas:
 
 @pytest.fixture
 def memoria(monkeypatch):
+    # Os fluxos abaixo testam a lógica com lotes maiores; os limites de produção têm teste próprio.
+    monkeypatch.setattr(conteudo, "LIMITE_FILTRO", 8)
+    monkeypatch.setattr(conteudo, "RODADAS_FILTRO", 2)
     banco = BancoMemoria()
     banco.instalar(monkeypatch)
     NotasFalsas.arquivos, NotasFalsas.fontes, NotasFalsas.falhar = {}, {}, False
@@ -423,7 +427,7 @@ def test_filtro_sem_github_e_com_falha(memoria):
 def test_filtro_com_erro_da_ia(memoria):
     capturar(memoria, "a", tipo="conceito", texto="churn")
 
-    def quebrar(instrucoes, mensagem):
+    def quebrar(instrucoes, mensagem, **kw):
         raise ErroIA("Claude respondeu 529: overloaded")
     memoria.ia_falsa.json = quebrar
     texto = processar_texto("/filtrar", memoria).texto
@@ -437,7 +441,7 @@ def test_filtro_em_rodadas(memoria):
     memoria.ia_falsa.filtro = [aprovar(n, f"Conceito {n}") for n in range(1, 11)]
     # /filtrar faz uma rodada só (para caber nos 60 s da Vercel)...
     texto = processar_texto("/filtrar", memoria).texto
-    assert "✅ Aprovadas (8)" in texto and "⏳ 2 ficaram para o próximo filtro" in texto
+    assert "✅ Aprovadas (8)" in texto and "⏳ 2 esperando" in texto
     # ...e o filtro de domingo faz duas.
     for n in range(11, 21):
         capturar(memoria, "x", tipo="conceito", texto=f"conceito {n}")
@@ -454,7 +458,7 @@ def test_segunda_rodada_falha_e_guarda_a_primeira(memoria):
     memoria.ia_falsa.filtro = [aprovar(n, f"Conceito {n}") for n in range(1, 11)]
     original = memoria.ia_falsa.json
 
-    def limite_na_segunda(instrucoes, mensagem):
+    def limite_na_segunda(instrucoes, mensagem, **kw):
         if memoria.ia_falsa.pedidos:
             raise ErroIA("Groq respondeu 429: rate limit")
         return original(instrucoes, mensagem)
@@ -463,7 +467,7 @@ def test_segunda_rodada_falha_e_guarda_a_primeira(memoria):
     conteudo.executar_filtro(memoria, lambda t, b=None: enviadas.append(t))   # 2 rodadas
     texto = enviadas[0]
     assert "✅ Aprovadas (8)" in texto
-    assert "⏳ 2 ficaram para o próximo filtro (ou use /filtrar de novo)." in texto
+    assert "⏳ 2 esperando: o filtro faz 2 por vez" in texto
     assert sum(i.status == "nova" for i in memoria.memoria.ideias.values()) == 2
 
 
@@ -638,7 +642,7 @@ def test_post_que_falhou_sai_atrasado_e_nao_trava_os_outros(memoria, monkeypatch
     agendar_dois(memoria)                            # 1 → terça 03/11, 2 → quinta 05/11
     original = memoria.ia_falsa.json
 
-    def groq_fora(instrucoes, mensagem):
+    def groq_fora(instrucoes, mensagem, **kw):
         raise ErroIA("Groq respondeu 429")
     memoria.ia_falsa.json = groq_fora
     enviados = []
@@ -661,7 +665,7 @@ def test_post_que_falhou_sai_atrasado_e_nao_trava_os_outros(memoria, monkeypatch
     memoria.memoria.ideias[2].post_texto = "Pronto #ia"
     chamadas = {"n": 0}
 
-    def falha_so_no_primeiro(instrucoes, mensagem):
+    def falha_so_no_primeiro(instrucoes, mensagem, **kw):
         chamadas["n"] += 1
         raise ErroIA("Groq respondeu 429")
     memoria.ia_falsa.json = falha_so_no_primeiro
@@ -693,7 +697,7 @@ def test_filtro_com_trava(memoria):
     assert "✅ Aprovadas (1)" in processar_texto("/filtrar", memoria).texto
     assert conteudo.TRAVA_FILTRO not in memoria.memoria.envios          # liberada no fim
 
-    def quebrar(instrucoes, mensagem):
+    def quebrar(instrucoes, mensagem, **kw):
         raise ErroIA("falhou")
     capturar(memoria, "b", tipo="conceito", texto="LTV")
     memoria.ia_falsa.json = quebrar
@@ -803,3 +807,36 @@ def test_sql_da_tabela_ideias(conexao_real):
     ideias.salvar(c, do_vault)
     assert list(ideias.por_fonte(c)) == ["_fontes/MBA/RAG.md"]
     ideias.criar_tabela(c)  # rodar de novo (produção) não quebra: as colunas novas usam IF NOT EXISTS
+
+
+# ---------------------------------------------------------------- Limites do Groq grátis
+
+def test_limites_de_producao_cabem_no_groq_gratis(monkeypatch):
+    """Groq grátis: ~1.000 tokens de resposta por minuto. Cada chamada pede menos que isso,
+    leva no máximo 2 ideias e o cron faz uma chamada por execução."""
+    assert conteudo.LIMITE_FILTRO == 2 and conteudo.RODADAS_FILTRO == 1
+    assert conteudo.MAX_TOKENS_FILTRO < 1000 and conteudo.MAX_TOKENS_POST < 1000
+
+
+def test_filtro_e_post_pedem_resposta_curta(memoria):
+    capturar(memoria, "a", tipo="conceito", texto="churn")
+    memoria.ia_falsa.filtro = [aprovar(1, "Churn")]
+    processar_texto("/filtrar", memoria)
+    with memoria.banco() as c:
+        conteudo.preparar_post(memoria, ideias.buscar(c, 1))
+    assert memoria.ia_falsa.tetos[-2:] == [conteudo.MAX_TOKENS_FILTRO, conteudo.MAX_TOKENS_POST]
+
+
+def test_groq_envia_o_teto_de_tokens():
+    recebido = {}
+
+    def groq(request: httpx.Request):
+        recebido.update(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ideias": []}'}}]})
+
+    from venire.ia.groq import Groq
+    ia = Groq("gsk_x", "qwen/qwen3.8-27b", cliente=httpx.Client(transport=httpx.MockTransport(groq)))
+    ia.json("instruções", "mensagem", max_tokens=800)
+    assert recebido["max_completion_tokens"] == 800
+    ia.json("instruções", "mensagem")
+    assert recebido["max_completion_tokens"] == 4000          # o interpretador continua igual

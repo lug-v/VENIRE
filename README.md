@@ -152,12 +152,12 @@ Cole um cronograma inteiro (ex.: o calendário de aulas do MBA) ou mande a foto 
 ## Banco de ideias e conceitos (fase 10)
 
 - **Capturar:** “ideia: post sobre IA no comercial B2B”, “conceito: overfitting”, “nota: hoje entendi a diferença entre RAG e MCP”, “ideia para postar dia 20: …”. Também por áudio e por foto (slide, quadro, página de livro). Tem botão ↩️ Desfazer. Na dúvida entre tarefa e ideia, o Venire pergunta.
-- **Filtrar:** todo domingo às 20h (ou `/filtrar`), a IA aprova, junta repetidas ou descarta, e explica cada aprovada (tema, explicação breve, por que importa, exemplo, potencial de 0 a 10 e ângulo do post). O resumo traz o botão ♻️ Manter para desfazer um descarte.
+- **Filtrar:** de hora em hora, 2 ideias por vez (ou na hora, com `/filtrar`), a IA aprova, junta repetidas ou descarta, e explica cada aprovada (tema, explicação breve, por que importa, exemplo, potencial de 0 a 10 e ângulo do post). O resumo traz o botão ♻️ Manter para desfazer um descarte.
 - **Obsidian:** cada aprovada vira um `.md` com frontmatter no repositório das notas, e a tarefa do Windows traz para `BRAIN\40 VENIRE`. Os conceitos do MBA (`BRAIN\10 MBA\Conceitos`) entram sozinhos no banco de ideias.
 - **LinkedIn:** as aprovadas ganham uma data (terças e quintas livres, maior potencial primeiro). Na véspera a IA escreve o post; no dia, às 8h, o rascunho chega com ✅ Publiquei, ✏️ Reescrever, ⏭️ Adiar uma semana e 🗑️ Descartar. A publicação é manual (copiar e colar). Se o envio de um dia falhar, o post chega no dia seguinte como “📣 Post atrasado”.
 - **Acompanhar:** `/ideias` (contagem por status e últimas capturadas), `/linkedin` (próximos posts, com botão para trocar a data). O resumo das 6h30 mostra “📣 Post de hoje”.
 
-**Configuração usada: grátis, só com o Groq.** Não cadastre a `ANTHROPIC_API_KEY`; o filtro e os posts usam a mesma `GROQ_API_KEY` do resto. O filtro trabalha em rodadas de 8 ideias (até 2 por vez), para caber no limite do plano grátis; se sobrar algo, fica para o próximo domingo ou para um novo `/filtrar`.
+**Configuração usada: grátis, só com o Groq.** Não cadastre a `ANTHROPIC_API_KEY`; o filtro e os posts usam a mesma `GROQ_API_KEY` do resto. O Groq grátis aceita cerca de 1.000 tokens de resposta por minuto, por isso o filtro faz 2 ideias por chamada e roda de hora em hora: os 20 conceitos do MBA levam umas 10 horas na primeira vez; depois disso, o que você capturar no dia é filtrado na hora seguinte. Cada execução que filtra alguma coisa manda um resumo no Telegram; sem ideia nova, não manda nada.
 
 | Variável | Valor |
 |---|---|
@@ -188,7 +188,7 @@ No cron-job.org, crie mais 2 tarefas (fuso America/Sao_Paulo):
 
 | Título | URL | Agendamento |
 |---|---|---|
-| Venire – ideias | `https://SEU-PROJETO.vercel.app/cron/ideias?chave=SUA_SENHA` | Domingo às 20:00 |
+| Venire – ideias | `https://SEU-PROJETO.vercel.app/cron/ideias?chave=SUA_SENHA` | A cada 1 hora |
 | Venire – LinkedIn | `https://SEU-PROJETO.vercel.app/cron/linkedin?chave=SUA_SENHA` | Todo dia às 08:00 |
 
 Depois do deploy, abra de novo `/telegram/configurar?chave=SUA_SENHA` para /ideias, /filtrar e /linkedin entrarem no menu.

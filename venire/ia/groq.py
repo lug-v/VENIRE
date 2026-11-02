@@ -46,11 +46,13 @@ class Groq:
         except json.JSONDecodeError as erro:
             raise ErroIA("A IA não devolveu um JSON válido.") from erro
 
-    def json(self, instrucoes: str, mensagem: str) -> dict:
+    def json(self, instrucoes: str, mensagem: str, max_tokens: int = 4000) -> dict:
+        """max_tokens menor é obrigatório nos textos longos: no plano grátis o Groq recusa o pedido
+        inteiro quando a resposta esperada passa do limite de tokens de saída por minuto."""
         return self._chat_json([
             {"role": "system", "content": instrucoes},
             {"role": "user", "content": mensagem},
-        ])
+        ], max_tokens=max_tokens)
 
     def json_imagem(self, instrucoes: str, imagem: bytes, tipo: str = "image/jpeg", legenda: str = "") -> dict:
         """Envia a foto (em base64) junto com as instruções e devolve JSON."""

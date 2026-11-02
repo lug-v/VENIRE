@@ -262,7 +262,7 @@ Telegram (texto, áudio ou foto)
 - Resposta: "💡 Ideia guardada: ..." com o botão ↩️ Desfazer, no padrão das outras fases.
 
 ### 2. Filtro com o Claude
-- Quando: todo domingo às 20h (`/cron/ideias`) ou na hora, pelo comando `/filtrar`.
+- Quando: de hora em hora (`/cron/ideias`, 2 ideias por vez) ou na hora, pelo comando `/filtrar`. (Era domingo às 20h; mudou por causa do limite do Groq grátis.)
 - O Claude (API da Anthropic) recebe as ideias com status `nova` e devolve JSON com, para cada uma:
   - decisão: `aprovada`, `juntar com #id` ou `descartada` (com o motivo);
   - tema (IA e Dados, Comercial B2B, Carreira, Automação, Outros);
@@ -294,7 +294,7 @@ Telegram (texto, áudio ou foto)
 ### Como ficou no código (02/11/2026)
 - `venire/servicos/ideias.py`: tabela `ideias`, calendário editorial (terças e quintas livres, maior potencial primeiro, data pedida respeitada) e a nota Markdown com frontmatter.
 - **Decisão (02/11/2026): rodar grátis, só com o Groq.** O Claude fica como opção paga (estimativa: US$ 0,01/mês com Haiku 5.5, US$ 0,22/mês com Sonnet 5.5).
-- `venire/nucleo/conteudo.py`: filtro em rodadas de 8 ideias, até 2 por execução, para caber no limite do Groq grátis; se a 2ª rodada bater no limite, a 1ª fica salva e o resto espera (as já aprovadas vão junto para achar repetidas), escrita do post, rotas agendadas e os botões do rascunho.
+- `venire/nucleo/conteudo.py`: filtro de 2 ideias por chamada e 1 chamada por execução, com resposta limitada a 800 tokens (o Groq grátis recusa pedidos acima de ~1.000 tokens de saída por minuto: erro 429 "Request too large" em 02/11/2026); o post pede no máximo 900 (as já aprovadas vão junto para achar repetidas), escrita do post, rotas agendadas e os botões do rascunho.
 - `venire/ia/claude.py`: cliente da API da Anthropic, com a mesma interface do Groq. **Sem `ANTHROPIC_API_KEY`, o filtro e os posts usam o Groq** (a alternativa grátis).
 - `venire/servicos/notas.py`: grava a nota no GitHub pela API (cria ou substitui).
 - Captura: "nota:", "conceito:" e "ideia:" no começo da mensagem são reconhecidos sem chamar a IA. Sem prefixo, a IA decide; na dúvida entre tarefa e ideia, pergunta com os botões 📝 Tarefa / 💡 Ideia. Foto de slide, quadro ou página vira anotação com o texto transcrito.
