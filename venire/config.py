@@ -46,6 +46,7 @@ class Config:
     claude_modelo: str = "claude-sonnet-5-5"
     github_token: str = ""
     obsidian_repo: str = ""
+    drill_secret: str = ""          # senha da rota de leitura do Drill (robô de mesa)
 
     @property
     def segredo_webhook(self) -> str:
@@ -75,6 +76,7 @@ def carregar_config() -> Config:
         claude_modelo=os.getenv("CLAUDE_MODEL", "").strip() or "claude-sonnet-5-5",
         github_token=os.getenv("GITHUB_TOKEN", "").strip(),
         obsidian_repo=os.getenv("OBSIDIAN_REPO", "").strip(),
+        drill_secret=os.getenv("DRILL_SECRET", "").strip(),
     )
 
 
