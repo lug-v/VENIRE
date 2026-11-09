@@ -11,6 +11,7 @@ Rotas:
   GET  /cron/noite            → compromissos de amanhã (21h)
   GET  /cron/ideias           → filtro do banco de ideias (domingo, 20h)
   GET  /cron/linkedin         → rascunho do post do dia (8h) e post de amanhã escrito na véspera
+  GET  /drill/resumo          → resumo SÓ DE LEITURA para o Drill (cabeçalho X-Drill-Secret)
   POST /webhook              → recebe as mensagens e os cliques nos botões
 """
 
@@ -33,7 +34,7 @@ from venire.ia.groq import Groq  # noqa: E402
 from venire.nucleo.respostas import (  # noqa: E402
     Dependencias, Resposta, processar_audio, processar_botao, processar_foto, processar_texto,
 )
-from venire.nucleo import automacoes, conteudo  # noqa: E402
+from venire.nucleo import automacoes, conteudo, drill  # noqa: E402
 from venire.servicos.notas import RepositorioNotas  # noqa: E402
 from venire.servicos.calendario import Calendario  # noqa: E402
 from venire.servicos.cambio import Cambio  # noqa: E402
@@ -66,6 +67,7 @@ def status():
         "agenda_configurada": bool(config.google_conta_servico_json and config.google_agenda_id),
         "claude_configurado": bool(config.anthropic_api_key),
         "obsidian_configurado": bool(config.github_token and config.obsidian_repo),
+        "drill_configurado": bool(config.drill_secret),
     }
 
 
@@ -231,6 +233,19 @@ def cron_ideias(request: Request, chave: str = ""):
 @app.get("/cron/linkedin")
 def cron_linkedin(request: Request, chave: str = ""):
     return _executar_cron(request, chave, conteudo.executar_linkedin)
+
+
+@app.get("/drill/resumo")
+def drill_resumo(x_drill_secret: str = Header(default="")):
+    """Resumo SÓ DE LEITURA para o Drill: compromissos de hoje e amanhã, mês e tarefas.
+
+    Protegido pela senha DRILL_SECRET no cabeçalho X-Drill-Secret. Não grava nada.
+    """
+    config = carregar_config()
+    if not iguais(x_drill_secret, config.drill_secret):
+        raise HTTPException(status_code=401, detail="Não autorizado.")
+    deps = montar_dependencias(config)
+    return drill.montar(deps, deps.hoje())
 
 
 @app.post("/webhook")
